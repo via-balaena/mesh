@@ -22,6 +22,7 @@ stl_io = "0.10"
 tobj = "4.0"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 quick-xml = "0.37"
+ply-rs = "0.1"
 
 # Geometry processing
 parry3d = "0.17"

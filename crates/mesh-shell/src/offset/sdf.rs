@@ -7,6 +7,7 @@ use mesh_repair::Mesh;
 
 use crate::error::{ShellError, ShellResult};
 
+use super::adaptive::{create_adaptive_grid, interpolate_offsets_adaptive, AdaptiveSdfParams};
 use super::extract::extract_isosurface;
 use super::grid::{SdfGrid, SdfOffsetParams};
 use super::transfer::transfer_vertex_data;
@@ -30,6 +31,10 @@ pub struct SdfOffsetStats {
     pub output_vertices: usize,
     /// Number of faces in output mesh.
     pub output_faces: usize,
+    /// Whether adaptive resolution was used.
+    pub adaptive_resolution: bool,
+    /// Estimated memory savings from adaptive resolution (percentage, 0 if not used).
+    pub memory_savings_percent: f64,
 }
 
 /// Result of SDF offset operation.
@@ -89,9 +94,25 @@ pub fn apply_sdf_offset(mesh: &Mesh, params: &SdfOffsetParams) -> ShellResult<Sd
         faces = mesh.faces.len(),
         voxel_size_mm = params.voxel_size_mm,
         padding_mm = params.padding_mm,
+        adaptive = params.adaptive_resolution,
         "Starting SDF offset"
     );
 
+    // Choose between adaptive and standard grid based on params
+    if params.adaptive_resolution {
+        apply_sdf_offset_adaptive(mesh, params, input_vertices, total_start)
+    } else {
+        apply_sdf_offset_standard(mesh, params, input_vertices, total_start)
+    }
+}
+
+/// Standard (non-adaptive) SDF offset implementation.
+fn apply_sdf_offset_standard(
+    mesh: &Mesh,
+    params: &SdfOffsetParams,
+    input_vertices: usize,
+    total_start: Instant,
+) -> ShellResult<SdfOffsetResult> {
     // Step 1: Create voxel grid
     let mut grid = SdfGrid::from_mesh_bounds(
         mesh,
@@ -103,7 +124,7 @@ pub fn apply_sdf_offset(mesh: &Mesh, params: &SdfOffsetParams) -> ShellResult<Sd
     info!(
         dims = ?grid.dims,
         total_voxels = grid.total_voxels(),
-        "Grid created"
+        "Grid created (standard)"
     );
 
     // Step 2: Compute base SDF
@@ -149,6 +170,8 @@ pub fn apply_sdf_offset(mesh: &Mesh, params: &SdfOffsetParams) -> ShellResult<Sd
         input_vertices,
         output_vertices: output_mesh.vertices.len(),
         output_faces: output_mesh.faces.len(),
+        adaptive_resolution: false,
+        memory_savings_percent: 0.0,
     };
 
     info!(
@@ -156,7 +179,97 @@ pub fn apply_sdf_offset(mesh: &Mesh, params: &SdfOffsetParams) -> ShellResult<Sd
         input_vertices = stats.input_vertices,
         output_vertices = stats.output_vertices,
         output_faces = stats.output_faces,
-        "SDF offset complete"
+        "SDF offset complete (standard)"
+    );
+
+    Ok(SdfOffsetResult {
+        mesh: output_mesh,
+        stats,
+    })
+}
+
+/// Adaptive multi-resolution SDF offset implementation.
+fn apply_sdf_offset_adaptive(
+    mesh: &Mesh,
+    params: &SdfOffsetParams,
+    input_vertices: usize,
+    total_start: Instant,
+) -> ShellResult<SdfOffsetResult> {
+    // Convert SdfOffsetParams to AdaptiveSdfParams
+    let adaptive_params = AdaptiveSdfParams {
+        fine_voxel_size_mm: params.voxel_size_mm,
+        coarse_voxel_size_mm: params.coarse_voxel_size_mm(),
+        refinement_distance_mm: params.refinement_distance_mm,
+        padding_mm: params.padding_mm,
+        max_voxels: params.max_voxels,
+        offset_neighbors: params.offset_neighbors,
+    };
+
+    // Step 1-2: Create adaptive grid and compute SDF
+    let sdf_start = Instant::now();
+    let adaptive_result = create_adaptive_grid(mesh, &adaptive_params)?;
+    let mut grid = adaptive_result.grid;
+    let adaptive_stats = adaptive_result.stats;
+    let sdf_time_ms = sdf_start.elapsed().as_millis() as u64;
+
+    info!(
+        dims = ?grid.dims,
+        total_voxels = grid.total_voxels(),
+        coarse_voxels = adaptive_stats.coarse_voxels,
+        refined_voxels = adaptive_stats.refined_coarse_voxels,
+        memory_savings = format!("{:.1}%", adaptive_stats.memory_savings_percent),
+        "Adaptive grid created"
+    );
+
+    debug!(sdf_time_ms, "Adaptive SDF computation complete");
+
+    // Step 3: Interpolate offsets using adaptive method
+    interpolate_offsets_adaptive(&mut grid, mesh, &adaptive_params);
+
+    // Step 4: Apply variable offset
+    grid.apply_variable_offset();
+
+    // Step 5: Extract isosurface
+    let extract_start = Instant::now();
+    let mut output_mesh = extract_isosurface(&grid)?;
+    let extraction_time_ms = extract_start.elapsed().as_millis() as u64;
+
+    debug!(
+        extraction_time_ms,
+        vertices = output_mesh.vertices.len(),
+        faces = output_mesh.faces.len(),
+        "Surface extraction complete"
+    );
+
+    // Step 6: Transfer vertex data from original mesh
+    let transfer_start = Instant::now();
+    transfer_vertex_data(mesh, &mut output_mesh)?;
+    let transfer_time_ms = transfer_start.elapsed().as_millis() as u64;
+
+    debug!(transfer_time_ms, "Vertex data transfer complete");
+
+    let total_time_ms = total_start.elapsed().as_millis();
+
+    let stats = SdfOffsetStats {
+        grid_dims: grid.dims,
+        total_voxels: grid.total_voxels(),
+        sdf_time_ms,
+        extraction_time_ms,
+        transfer_time_ms,
+        input_vertices,
+        output_vertices: output_mesh.vertices.len(),
+        output_faces: output_mesh.faces.len(),
+        adaptive_resolution: true,
+        memory_savings_percent: adaptive_stats.memory_savings_percent,
+    };
+
+    info!(
+        total_time_ms,
+        input_vertices = stats.input_vertices,
+        output_vertices = stats.output_vertices,
+        output_faces = stats.output_faces,
+        memory_savings = format!("{:.1}%", stats.memory_savings_percent),
+        "SDF offset complete (adaptive)"
     );
 
     Ok(SdfOffsetResult {
@@ -211,6 +324,9 @@ mod tests {
             padding_mm: 5.0,
             max_voxels: 1_000_000,
             offset_neighbors: 4,
+            adaptive_resolution: false,
+            coarse_voxel_multiplier: 4.0,
+            refinement_distance_mm: 5.0,
         };
 
         let result = apply_sdf_offset(&mesh, &params).unwrap();
@@ -218,6 +334,7 @@ mod tests {
         // Should produce a valid mesh
         assert!(!result.mesh.vertices.is_empty());
         assert!(!result.mesh.faces.is_empty());
+        assert!(!result.stats.adaptive_resolution);
 
         // Output should be larger than input (we're expanding)
         let input_bounds = mesh.bounds().unwrap();
@@ -233,6 +350,51 @@ mod tests {
             output_extent.x,
             input_extent.x
         );
+    }
+
+    #[test]
+    fn test_sdf_offset_cube_adaptive() {
+        let mesh = create_unit_cube();
+
+        let params = SdfOffsetParams::adaptive();
+
+        let result = apply_sdf_offset(&mesh, &params).unwrap();
+
+        // Should produce a valid mesh
+        assert!(!result.mesh.vertices.is_empty());
+        assert!(!result.mesh.faces.is_empty());
+        assert!(result.stats.adaptive_resolution);
+
+        // Output should be larger than input (we're expanding)
+        let input_bounds = mesh.bounds().unwrap();
+        let output_bounds = result.mesh.bounds().unwrap();
+
+        let input_extent = input_bounds.1 - input_bounds.0;
+        let output_extent = output_bounds.1 - output_bounds.0;
+
+        // With offset, output should be larger
+        assert!(
+            output_extent.x > input_extent.x,
+            "Adaptive output should be wider: {} vs {}",
+            output_extent.x,
+            input_extent.x
+        );
+    }
+
+    #[test]
+    fn test_sdf_offset_adaptive_presets() {
+        let mesh = create_unit_cube();
+
+        // Test all adaptive presets compile and run
+        for params in [
+            SdfOffsetParams::adaptive(),
+            SdfOffsetParams::adaptive_high_quality(),
+            SdfOffsetParams::adaptive_large_mesh(),
+        ] {
+            let result = apply_sdf_offset(&mesh, &params).unwrap();
+            assert!(!result.mesh.vertices.is_empty());
+            assert!(result.stats.adaptive_resolution);
+        }
     }
 
     #[test]

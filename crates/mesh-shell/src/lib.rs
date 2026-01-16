@@ -49,5 +49,18 @@ pub use offset::{
 
 // Shell generation (rename to avoid conflict with error::ShellResult)
 pub use shell::{
-    generate_shell, ShellParams, ShellResult as ShellGenerationResult,
+    generate_shell, generate_shell_no_validation,
+    ShellParams, ShellResult as ShellGenerationResult, WallGenerationMethod,
+};
+
+// Shell validation and repair
+pub use shell::{
+    validate_shell, validate_and_repair_shell, repair_shell,
+    ShellValidationResult, ShellIssue, ShellRepairResult,
+};
+
+// Rim generation and boundary analysis
+pub use shell::{
+    analyze_boundary, generate_rim, generate_rim_advanced, generate_rim_for_sdf_shell,
+    validate_boundary_for_rim, BoundaryAnalysis, BoundaryLoop, RimResult,
 };

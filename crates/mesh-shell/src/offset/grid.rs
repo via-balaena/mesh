@@ -12,6 +12,7 @@ use crate::error::{ShellError, ShellResult};
 #[derive(Debug, Clone)]
 pub struct SdfOffsetParams {
     /// Voxel size in mm (smaller = more detail, more memory).
+    /// When `adaptive_resolution` is true, this is the fine voxel size.
     pub voxel_size_mm: f64,
     /// Padding beyond mesh bounds in mm.
     pub padding_mm: f64,
@@ -19,6 +20,17 @@ pub struct SdfOffsetParams {
     pub max_voxels: usize,
     /// Number of nearest neighbors for offset interpolation.
     pub offset_neighbors: usize,
+    /// Enable adaptive multi-resolution SDF for memory efficiency.
+    /// When true, uses coarse voxels far from the surface and fine voxels near it.
+    pub adaptive_resolution: bool,
+    /// Coarse voxel size multiplier (relative to voxel_size_mm).
+    /// Only used when `adaptive_resolution` is true.
+    /// Default: 4.0 (coarse voxels are 4x larger than fine voxels).
+    pub coarse_voxel_multiplier: f64,
+    /// Distance from surface (in mm) within which to use fine voxels.
+    /// Only used when `adaptive_resolution` is true.
+    /// Default: 5.0mm
+    pub refinement_distance_mm: f64,
 }
 
 impl Default for SdfOffsetParams {
@@ -28,11 +40,64 @@ impl Default for SdfOffsetParams {
             padding_mm: 12.0,
             max_voxels: 50_000_000,
             offset_neighbors: 8,
+            adaptive_resolution: false,
+            coarse_voxel_multiplier: 4.0,
+            refinement_distance_mm: 5.0,
         }
     }
 }
 
+impl SdfOffsetParams {
+    /// Create params with adaptive resolution enabled for large meshes.
+    ///
+    /// Uses coarser voxels far from the surface to reduce memory usage
+    /// while maintaining detail quality near the surface.
+    pub fn adaptive() -> Self {
+        Self {
+            voxel_size_mm: 0.5,
+            padding_mm: 10.0,
+            max_voxels: 50_000_000,
+            offset_neighbors: 8,
+            adaptive_resolution: true,
+            coarse_voxel_multiplier: 4.0,
+            refinement_distance_mm: 5.0,
+        }
+    }
+
+    /// Create high-quality params with adaptive resolution.
+    pub fn adaptive_high_quality() -> Self {
+        Self {
+            voxel_size_mm: 0.4,
+            padding_mm: 12.0,
+            max_voxels: 80_000_000,
+            offset_neighbors: 12,
+            adaptive_resolution: true,
+            coarse_voxel_multiplier: 3.0,
+            refinement_distance_mm: 8.0,
+        }
+    }
+
+    /// Create params optimized for very large meshes.
+    pub fn adaptive_large_mesh() -> Self {
+        Self {
+            voxel_size_mm: 0.75,
+            padding_mm: 8.0,
+            max_voxels: 30_000_000,
+            offset_neighbors: 6,
+            adaptive_resolution: true,
+            coarse_voxel_multiplier: 5.0,
+            refinement_distance_mm: 4.0,
+        }
+    }
+
+    /// Get the coarse voxel size when adaptive resolution is enabled.
+    pub fn coarse_voxel_size_mm(&self) -> f64 {
+        self.voxel_size_mm * self.coarse_voxel_multiplier
+    }
+}
+
 /// 3D voxel grid for SDF computation.
+#[derive(Debug)]
 pub struct SdfGrid {
     /// Grid dimensions [x, y, z].
     pub dims: [usize; 3],
@@ -326,5 +391,42 @@ mod tests {
         let mesh = create_unit_cube();
         let result = SdfGrid::from_mesh_bounds(&mesh, 0.1, 5.0, 1000);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_sdf_offset_params_default() {
+        let params = SdfOffsetParams::default();
+        assert!(!params.adaptive_resolution);
+        assert_eq!(params.voxel_size_mm, 0.75);
+    }
+
+    #[test]
+    fn test_sdf_offset_params_adaptive() {
+        let params = SdfOffsetParams::adaptive();
+        assert!(params.adaptive_resolution);
+        assert!(params.coarse_voxel_size_mm() > params.voxel_size_mm);
+    }
+
+    #[test]
+    fn test_sdf_offset_params_presets() {
+        let hq = SdfOffsetParams::adaptive_high_quality();
+        let large = SdfOffsetParams::adaptive_large_mesh();
+
+        // High quality should have finer voxels
+        assert!(hq.voxel_size_mm < large.voxel_size_mm);
+
+        // Both should have adaptive enabled
+        assert!(hq.adaptive_resolution);
+        assert!(large.adaptive_resolution);
+    }
+
+    #[test]
+    fn test_coarse_voxel_size() {
+        let params = SdfOffsetParams {
+            voxel_size_mm: 1.0,
+            coarse_voxel_multiplier: 4.0,
+            ..Default::default()
+        };
+        assert_eq!(params.coarse_voxel_size_mm(), 4.0);
     }
 }

@@ -10,81 +10,101 @@ use crate::Mesh;
 
 /// Fix winding order so all faces have consistent orientation.
 ///
-/// Uses BFS flood fill from an arbitrary start face. For each face,
-/// ensures that shared edges are traversed in opposite directions.
+/// Uses BFS flood fill from an arbitrary start face in each connected component.
+/// For each face, ensures that shared edges are traversed in opposite directions.
 ///
-/// Returns the number of faces that were flipped.
+/// This function handles disconnected meshes by processing each component separately.
 pub fn fix_winding_order(mesh: &mut Mesh) -> MeshResult<()> {
     if mesh.faces.is_empty() {
         return Ok(());
     }
 
     let adjacency = MeshAdjacency::build(&mesh.faces);
+    let face_count = mesh.faces.len();
 
-    // Track which faces have been visited and their orientation
-    let mut visited: HashSet<u32> = HashSet::new();
+    // Track which faces have been visited globally
+    let mut global_visited: HashSet<u32> = HashSet::new();
     let mut to_flip: HashSet<u32> = HashSet::new();
-    let mut queue: VecDeque<u32> = VecDeque::new();
+    let mut component_count = 0;
+    let mut total_flipped = 0;
 
-    // Start from face 0
-    queue.push_back(0);
-    visited.insert(0);
+    // Process all faces, starting new components as needed
+    for start_face in 0..face_count {
+        let start_face = start_face as u32;
 
-    while let Some(face_idx) = queue.pop_front() {
-        let face = mesh.faces[face_idx as usize];
+        // Skip already visited faces
+        if global_visited.contains(&start_face) {
+            continue;
+        }
 
-        // Check all three edges of this face
-        for edge_idx in 0..3 {
-            let v0 = face[edge_idx];
-            let v1 = face[(edge_idx + 1) % 3];
+        // Start a new component
+        component_count += 1;
+        let mut component_flips: HashSet<u32> = HashSet::new();
+        let mut queue: VecDeque<u32> = VecDeque::new();
 
-            // Get the canonical edge key
-            let edge_key = if v0 < v1 { (v0, v1) } else { (v1, v0) };
+        queue.push_back(start_face);
+        global_visited.insert(start_face);
 
-            // Find neighbor faces sharing this edge
-            if let Some(neighbors) = adjacency.edge_to_faces.get(&edge_key) {
-                for &neighbor_idx in neighbors {
-                    if neighbor_idx == face_idx {
-                        continue;
-                    }
+        while let Some(face_idx) = queue.pop_front() {
+            let face = mesh.faces[face_idx as usize];
 
-                    if visited.contains(&neighbor_idx) {
-                        continue;
-                    }
+            // Check all three edges of this face
+            for edge_idx in 0..3 {
+                let v0 = face[edge_idx];
+                let v1 = face[(edge_idx + 1) % 3];
 
-                    visited.insert(neighbor_idx);
+                // Get the canonical edge key
+                let edge_key = if v0 < v1 { (v0, v1) } else { (v1, v0) };
 
-                    // Check edge direction in neighbor
-                    let neighbor_face = mesh.faces[neighbor_idx as usize];
-                    let neighbor_dir = edge_direction_in_face(&neighbor_face, v0, v1);
-
-                    // Current face traverses edge as v0 -> v1
-                    // For consistent winding, neighbor should traverse as v1 -> v0
-                    // (opposite direction on the shared edge)
-                    let should_flip = match neighbor_dir {
-                        Some(same_dir) => {
-                            // If neighbor has same direction, one of them needs flipping
-                            // Since current face is "correct", flip the neighbor
-                            same_dir
+                // Find neighbor faces sharing this edge
+                if let Some(neighbors) = adjacency.edge_to_faces.get(&edge_key) {
+                    for &neighbor_idx in neighbors {
+                        if neighbor_idx == face_idx {
+                            continue;
                         }
-                        None => false, // Edge not found (shouldn't happen)
-                    };
 
-                    let actual_flip = if to_flip.contains(&face_idx) {
-                        // Current face was itself flipped, so invert the decision
-                        !should_flip
-                    } else {
-                        should_flip
-                    };
+                        if global_visited.contains(&neighbor_idx) {
+                            continue;
+                        }
 
-                    if actual_flip {
-                        to_flip.insert(neighbor_idx);
+                        global_visited.insert(neighbor_idx);
+
+                        // Check edge direction in neighbor
+                        let neighbor_face = mesh.faces[neighbor_idx as usize];
+                        let neighbor_dir = edge_direction_in_face(&neighbor_face, v0, v1);
+
+                        // Current face traverses edge as v0 -> v1
+                        // For consistent winding, neighbor should traverse as v1 -> v0
+                        // (opposite direction on the shared edge)
+                        let should_flip = match neighbor_dir {
+                            Some(same_dir) => {
+                                // If neighbor has same direction, one of them needs flipping
+                                // Since current face is "correct", flip the neighbor
+                                same_dir
+                            }
+                            None => false, // Edge not found (shouldn't happen)
+                        };
+
+                        let actual_flip = if component_flips.contains(&face_idx) {
+                            // Current face was itself flipped, so invert the decision
+                            !should_flip
+                        } else {
+                            should_flip
+                        };
+
+                        if actual_flip {
+                            component_flips.insert(neighbor_idx);
+                        }
+
+                        queue.push_back(neighbor_idx);
                     }
-
-                    queue.push_back(neighbor_idx);
                 }
             }
         }
+
+        // Add this component's flips to the global set
+        total_flipped += component_flips.len();
+        to_flip.extend(component_flips);
     }
 
     // Apply flips (swap indices 1 and 2)
@@ -93,19 +113,15 @@ pub fn fix_winding_order(mesh: &mut Mesh) -> MeshResult<()> {
         face.swap(1, 2);
     }
 
-    let flipped_count = to_flip.len();
-    if flipped_count > 0 {
-        info!("Fixed winding order: flipped {} faces", flipped_count);
-    } else {
-        debug!("Winding order already consistent");
-    }
-
-    // Check for unvisited faces (disconnected components)
-    let unvisited = mesh.faces.len() - visited.len();
-    if unvisited > 0 {
+    if total_flipped > 0 {
         info!(
-            "Warning: {} faces not visited (mesh has disconnected components)",
-            unvisited
+            "Fixed winding order: flipped {} faces across {} component(s)",
+            total_flipped, component_count
+        );
+    } else {
+        debug!(
+            "Winding order already consistent across {} component(s)",
+            component_count
         );
     }
 
@@ -178,6 +194,51 @@ mod tests {
         match (dir0, dir1) {
             (Some(d0), Some(d1)) => assert_ne!(d0, d1),
             _ => panic!("Edge should exist in both faces"),
+        }
+    }
+
+    #[test]
+    fn test_fix_disconnected_components() {
+        // Two disconnected components, each with inconsistent winding
+        let mut mesh = Mesh::new();
+
+        // Component 1: Two triangles sharing edge (0,1)
+        mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(1.0, 0.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(0.5, 1.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(0.5, -1.0, 0.0));
+        mesh.faces.push([0, 1, 2]); // CCW
+        mesh.faces.push([0, 1, 3]); // Wrong winding
+
+        // Component 2: Two triangles sharing edge (4,5), disconnected from component 1
+        mesh.vertices.push(Vertex::from_coords(10.0, 0.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(11.0, 0.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(10.5, 1.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(10.5, -1.0, 0.0));
+        mesh.faces.push([4, 5, 6]); // CCW
+        mesh.faces.push([4, 5, 7]); // Wrong winding
+
+        fix_winding_order(&mut mesh).unwrap();
+
+        // Check both components have consistent winding
+        // Component 1: edge (0,1) should be opposite in faces 0 and 1
+        let f0 = mesh.faces[0];
+        let f1 = mesh.faces[1];
+        let dir0 = edge_direction_in_face(&f0, 0, 1);
+        let dir1 = edge_direction_in_face(&f1, 0, 1);
+        match (dir0, dir1) {
+            (Some(d0), Some(d1)) => assert_ne!(d0, d1, "Component 1 winding inconsistent"),
+            _ => panic!("Edge should exist in both faces of component 1"),
+        }
+
+        // Component 2: edge (4,5) should be opposite in faces 2 and 3
+        let f2 = mesh.faces[2];
+        let f3 = mesh.faces[3];
+        let dir2 = edge_direction_in_face(&f2, 4, 5);
+        let dir3 = edge_direction_in_face(&f3, 4, 5);
+        match (dir2, dir3) {
+            (Some(d2), Some(d3)) => assert_ne!(d2, d3, "Component 2 winding inconsistent"),
+            _ => panic!("Edge should exist in both faces of component 2"),
         }
     }
 }

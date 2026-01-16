@@ -7,6 +7,7 @@ use std::path::Path;
 use tracing::{debug, info, warn};
 
 use crate::error::{MeshError, MeshResult};
+use crate::validate::{validate_mesh_data, ValidationOptions};
 use crate::{Mesh, Vertex};
 
 /// Supported mesh file formats.
@@ -15,6 +16,7 @@ pub enum MeshFormat {
     Stl,
     Obj,
     ThreeMf,
+    Ply,
 }
 
 impl MeshFormat {
@@ -27,6 +29,7 @@ impl MeshFormat {
                 "stl" => Some(MeshFormat::Stl),
                 "obj" => Some(MeshFormat::Obj),
                 "3mf" => Some(MeshFormat::ThreeMf),
+                "ply" => Some(MeshFormat::Ply),
                 _ => None,
             })
     }
@@ -44,6 +47,7 @@ pub fn load_mesh(path: &Path) -> MeshResult<Mesh> {
         MeshFormat::Stl => load_stl(path)?,
         MeshFormat::Obj => load_obj(path)?,
         MeshFormat::ThreeMf => load_3mf(path)?,
+        MeshFormat::Ply => load_ply(path)?,
     };
 
     // Log basic stats
@@ -78,6 +82,9 @@ pub fn load_mesh(path: &Path) -> MeshResult<Mesh> {
             details: "mesh has no vertices or faces".to_string(),
         });
     }
+
+    // Validate mesh data (check for invalid indices and coordinates)
+    validate_mesh_data(&mesh, &ValidationOptions::default())?;
 
     Ok(mesh)
 }
@@ -202,6 +209,173 @@ fn load_obj(path: &Path) -> MeshResult<Mesh> {
     Ok(mesh)
 }
 
+/// Load mesh from PLY file (ASCII or binary).
+///
+/// PLY (Polygon File Format, also known as Stanford Triangle Format) is widely
+/// used in 3D scanning and point cloud processing. This function supports:
+/// - ASCII format
+/// - Binary little-endian format
+/// - Binary big-endian format
+///
+/// The loader expects `vertex` elements with `x`, `y`, `z` properties and
+/// `face` elements with a `vertex_indices` list property.
+fn load_ply(path: &Path) -> MeshResult<Mesh> {
+    use ply_rs::parser::Parser;
+    use ply_rs::ply::Property;
+
+    let file = File::open(path).map_err(|e| MeshError::IoRead {
+        path: path.to_path_buf(),
+        source: e,
+    })?;
+    let mut reader = BufReader::new(file);
+
+    // Create parser for default element type
+    let parser = Parser::<ply_rs::ply::DefaultElement>::new();
+
+    // Parse the PLY file
+    let ply = parser.read_ply(&mut reader).map_err(|e| MeshError::ParseError {
+        path: path.to_path_buf(),
+        details: format!("PLY parse error: {:?}", e),
+    })?;
+
+    let mut mesh = Mesh::new();
+
+    // Extract vertices
+    if let Some(vertices) = ply.payload.get("vertex") {
+        for vertex_element in vertices {
+            let x = get_ply_float(vertex_element.get("x"), "x", path)?;
+            let y = get_ply_float(vertex_element.get("y"), "y", path)?;
+            let z = get_ply_float(vertex_element.get("z"), "z", path)?;
+
+            let mut vertex = Vertex::from_coords(x, y, z);
+
+            // Try to load normals if present
+            if let (Some(nx), Some(ny), Some(nz)) = (
+                vertex_element.get("nx"),
+                vertex_element.get("ny"),
+                vertex_element.get("nz"),
+            ) {
+                if let (Ok(nx), Ok(ny), Ok(nz)) = (
+                    get_ply_float(Some(nx), "nx", path),
+                    get_ply_float(Some(ny), "ny", path),
+                    get_ply_float(Some(nz), "nz", path),
+                ) {
+                    vertex.normal = Some(nalgebra::Vector3::new(nx, ny, nz));
+                }
+            }
+
+            // Try to load vertex colors if present (red, green, blue)
+            if let (Some(r), Some(g), Some(b)) = (
+                vertex_element.get("red"),
+                vertex_element.get("green"),
+                vertex_element.get("blue"),
+            ) {
+                if let (Ok(r), Ok(g), Ok(b)) = (
+                    get_ply_u8(Some(r)),
+                    get_ply_u8(Some(g)),
+                    get_ply_u8(Some(b)),
+                ) {
+                    vertex.color = Some(crate::VertexColor::new(r, g, b));
+                }
+            }
+
+            mesh.vertices.push(vertex);
+        }
+    }
+
+    // Extract faces
+    if let Some(faces) = ply.payload.get("face") {
+        for face_element in faces {
+            // Face indices can be stored under various names
+            let indices = face_element
+                .get("vertex_indices")
+                .or_else(|| face_element.get("vertex_index"));
+
+            if let Some(Property::ListInt(indices)) = indices {
+                // Triangulate if necessary (fan triangulation for polygons)
+                if indices.len() >= 3 {
+                    for i in 1..indices.len() - 1 {
+                        mesh.faces.push([
+                            indices[0] as u32,
+                            indices[i] as u32,
+                            indices[i + 1] as u32,
+                        ]);
+                    }
+                }
+            } else if let Some(Property::ListUInt(indices)) = indices {
+                if indices.len() >= 3 {
+                    for i in 1..indices.len() - 1 {
+                        mesh.faces.push([
+                            indices[0] as u32,
+                            indices[i] as u32,
+                            indices[i + 1] as u32,
+                        ]);
+                    }
+                }
+            } else if let Some(Property::ListUChar(indices)) = indices {
+                if indices.len() >= 3 {
+                    for i in 1..indices.len() - 1 {
+                        mesh.faces.push([
+                            indices[0] as u32,
+                            indices[i] as u32,
+                            indices[i + 1] as u32,
+                        ]);
+                    }
+                }
+            }
+        }
+    }
+
+    debug!(
+        "PLY loaded: {} vertices, {} faces",
+        mesh.vertices.len(),
+        mesh.faces.len()
+    );
+
+    Ok(mesh)
+}
+
+/// Helper to extract a float value from a PLY property.
+fn get_ply_float(
+    prop: Option<&ply_rs::ply::Property>,
+    name: &str,
+    path: &Path,
+) -> MeshResult<f64> {
+    use ply_rs::ply::Property;
+
+    match prop {
+        Some(Property::Float(v)) => Ok(*v as f64),
+        Some(Property::Double(v)) => Ok(*v),
+        Some(Property::Int(v)) => Ok(*v as f64),
+        Some(Property::UInt(v)) => Ok(*v as f64),
+        Some(Property::Short(v)) => Ok(*v as f64),
+        Some(Property::UShort(v)) => Ok(*v as f64),
+        Some(Property::Char(v)) => Ok(*v as f64),
+        Some(Property::UChar(v)) => Ok(*v as f64),
+        _ => Err(MeshError::ParseError {
+            path: path.to_path_buf(),
+            details: format!("Missing or invalid PLY property: {}", name),
+        }),
+    }
+}
+
+/// Helper to extract a u8 value from a PLY property (for colors).
+fn get_ply_u8(prop: Option<&ply_rs::ply::Property>) -> Result<u8, ()> {
+    use ply_rs::ply::Property;
+
+    match prop {
+        Some(Property::UChar(v)) => Ok(*v),
+        Some(Property::Char(v)) => Ok(*v as u8),
+        Some(Property::UShort(v)) => Ok((*v).min(255) as u8),
+        Some(Property::Short(v)) => Ok((*v).clamp(0, 255) as u8),
+        Some(Property::UInt(v)) => Ok((*v).min(255) as u8),
+        Some(Property::Int(v)) => Ok((*v).clamp(0, 255) as u8),
+        Some(Property::Float(v)) => Ok((v * 255.0).clamp(0.0, 255.0) as u8),
+        Some(Property::Double(v)) => Ok((v * 255.0).clamp(0.0, 255.0) as u8),
+        _ => Err(()),
+    }
+}
+
 /// Save mesh to file, auto-detecting format from extension.
 pub fn save_mesh(mesh: &Mesh, path: &Path) -> MeshResult<()> {
     let format = MeshFormat::from_path(path).ok_or_else(|| MeshError::UnsupportedFormat {
@@ -212,6 +386,7 @@ pub fn save_mesh(mesh: &Mesh, path: &Path) -> MeshResult<()> {
         MeshFormat::Stl => save_stl(mesh, path),
         MeshFormat::Obj => save_obj(mesh, path),
         MeshFormat::ThreeMf => save_3mf(mesh, path),
+        MeshFormat::Ply => save_ply(mesh, path),
     }
 }
 
@@ -666,6 +841,259 @@ const RELS_XML: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </Relationships>
 "#;
 
+/// Save mesh to PLY file (ASCII format for maximum compatibility).
+///
+/// PLY (Polygon File Format) is widely supported by 3D scanning software,
+/// point cloud libraries (PCL), and mesh processing tools like MeshLab.
+///
+/// The output includes:
+/// - Vertex positions (x, y, z as float32)
+/// - Vertex normals if present (nx, ny, nz as float32)
+/// - Face vertex indices (as a list property)
+///
+/// Uses ASCII format for maximum compatibility across tools.
+/// For binary format (smaller files), use `save_ply_binary()`.
+pub fn save_ply(mesh: &Mesh, path: &Path) -> MeshResult<()> {
+    // Default to ASCII for maximum compatibility
+    save_ply_ascii(mesh, path)
+}
+
+/// Save mesh to PLY file (binary little-endian format).
+///
+/// Binary format is more compact but may have compatibility issues with some tools.
+/// Use `save_ply()` (ASCII) if you encounter issues.
+pub fn save_ply_binary(mesh: &Mesh, path: &Path) -> MeshResult<()> {
+    use ply_rs::ply::{
+        Addable, DefaultElement, ElementDef, Encoding, Ply, Property, PropertyDef, PropertyType,
+        ScalarType,
+    };
+    use ply_rs::writer::Writer;
+
+    info!("Saving mesh to {:?} (PLY binary format)", path);
+
+    let mut ply = Ply::<DefaultElement>::new();
+
+    // Set encoding to binary little-endian for efficiency
+    ply.header.encoding = Encoding::BinaryLittleEndian;
+
+    // Check if we have normals and colors
+    let has_normals = mesh.vertices.iter().any(|v| v.normal.is_some());
+    let has_colors = mesh.vertices.iter().any(|v| v.color.is_some());
+
+    // Define vertex element
+    let mut vertex_def = ElementDef::new("vertex".to_string());
+    vertex_def.properties.add(PropertyDef::new("x".to_string(), PropertyType::Scalar(ScalarType::Float)));
+    vertex_def.properties.add(PropertyDef::new("y".to_string(), PropertyType::Scalar(ScalarType::Float)));
+    vertex_def.properties.add(PropertyDef::new("z".to_string(), PropertyType::Scalar(ScalarType::Float)));
+    if has_normals {
+        vertex_def.properties.add(PropertyDef::new("nx".to_string(), PropertyType::Scalar(ScalarType::Float)));
+        vertex_def.properties.add(PropertyDef::new("ny".to_string(), PropertyType::Scalar(ScalarType::Float)));
+        vertex_def.properties.add(PropertyDef::new("nz".to_string(), PropertyType::Scalar(ScalarType::Float)));
+    }
+    if has_colors {
+        vertex_def.properties.add(PropertyDef::new("red".to_string(), PropertyType::Scalar(ScalarType::UChar)));
+        vertex_def.properties.add(PropertyDef::new("green".to_string(), PropertyType::Scalar(ScalarType::UChar)));
+        vertex_def.properties.add(PropertyDef::new("blue".to_string(), PropertyType::Scalar(ScalarType::UChar)));
+    }
+    vertex_def.count = mesh.vertices.len();
+    ply.header.elements.add(vertex_def);
+
+    // Define face element
+    let mut face_def = ElementDef::new("face".to_string());
+    face_def.properties.add(PropertyDef::new(
+        "vertex_indices".to_string(),
+        PropertyType::List(ScalarType::UChar, ScalarType::Int),
+    ));
+    face_def.count = mesh.faces.len();
+    ply.header.elements.add(face_def);
+
+    // Add vertex data
+    let mut vertices_payload: Vec<DefaultElement> = Vec::with_capacity(mesh.vertices.len());
+    for v in &mesh.vertices {
+        let mut element = DefaultElement::new();
+        element.insert("x".to_string(), Property::Float(v.position.x as f32));
+        element.insert("y".to_string(), Property::Float(v.position.y as f32));
+        element.insert("z".to_string(), Property::Float(v.position.z as f32));
+        if has_normals {
+            let n = v.normal.unwrap_or(nalgebra::Vector3::new(0.0, 0.0, 0.0));
+            element.insert("nx".to_string(), Property::Float(n.x as f32));
+            element.insert("ny".to_string(), Property::Float(n.y as f32));
+            element.insert("nz".to_string(), Property::Float(n.z as f32));
+        }
+        if has_colors {
+            let c = v.color.unwrap_or(crate::VertexColor::new(255, 255, 255));
+            element.insert("red".to_string(), Property::UChar(c.r));
+            element.insert("green".to_string(), Property::UChar(c.g));
+            element.insert("blue".to_string(), Property::UChar(c.b));
+        }
+        vertices_payload.push(element);
+    }
+    ply.payload.insert("vertex".to_string(), vertices_payload);
+
+    // Add face data
+    let mut faces_payload: Vec<DefaultElement> = Vec::with_capacity(mesh.faces.len());
+    for face in &mesh.faces {
+        let mut element = DefaultElement::new();
+        element.insert(
+            "vertex_indices".to_string(),
+            Property::ListInt(vec![face[0] as i32, face[1] as i32, face[2] as i32]),
+        );
+        faces_payload.push(element);
+    }
+    ply.payload.insert("face".to_string(), faces_payload);
+
+    // Ensure header counts match payload (required for ply-rs)
+    ply.make_consistent().map_err(|e| MeshError::IoWrite {
+        path: path.to_path_buf(),
+        source: std::io::Error::new(std::io::ErrorKind::Other, format!("PLY consistency error: {:?}", e)),
+    })?;
+
+    // Write to file
+    let file = File::create(path).map_err(|e| MeshError::IoWrite {
+        path: path.to_path_buf(),
+        source: e,
+    })?;
+    let mut writer = BufWriter::new(file);
+
+    let ply_writer = Writer::new();
+    ply_writer.write_ply(&mut writer, &mut ply).map_err(|e| MeshError::IoWrite {
+        path: path.to_path_buf(),
+        source: std::io::Error::new(std::io::ErrorKind::Other, format!("PLY write error: {:?}", e)),
+    })?;
+
+    writer.flush().map_err(|e| MeshError::IoWrite {
+        path: path.to_path_buf(),
+        source: e,
+    })?;
+
+    info!(
+        "Saved {} vertices and {} faces to {:?} (PLY binary)",
+        mesh.vertices.len(),
+        mesh.faces.len(),
+        path
+    );
+
+    Ok(())
+}
+
+/// Save mesh to ASCII PLY file.
+///
+/// ASCII format is human-readable but larger than binary.
+/// Useful for debugging or when binary format is not supported.
+pub fn save_ply_ascii(mesh: &Mesh, path: &Path) -> MeshResult<()> {
+    use ply_rs::ply::{
+        Addable, DefaultElement, ElementDef, Encoding, Ply, Property, PropertyDef, PropertyType,
+        ScalarType,
+    };
+    use ply_rs::writer::Writer;
+
+    info!("Saving mesh to {:?} (PLY ASCII format)", path);
+
+    let mut ply = Ply::<DefaultElement>::new();
+
+    // Set encoding to ASCII
+    ply.header.encoding = Encoding::Ascii;
+
+    // Check if we have normals and colors
+    let has_normals = mesh.vertices.iter().any(|v| v.normal.is_some());
+    let has_colors = mesh.vertices.iter().any(|v| v.color.is_some());
+
+    // Define vertex element
+    let mut vertex_def = ElementDef::new("vertex".to_string());
+    vertex_def.properties.add(PropertyDef::new("x".to_string(), PropertyType::Scalar(ScalarType::Float)));
+    vertex_def.properties.add(PropertyDef::new("y".to_string(), PropertyType::Scalar(ScalarType::Float)));
+    vertex_def.properties.add(PropertyDef::new("z".to_string(), PropertyType::Scalar(ScalarType::Float)));
+    if has_normals {
+        vertex_def.properties.add(PropertyDef::new("nx".to_string(), PropertyType::Scalar(ScalarType::Float)));
+        vertex_def.properties.add(PropertyDef::new("ny".to_string(), PropertyType::Scalar(ScalarType::Float)));
+        vertex_def.properties.add(PropertyDef::new("nz".to_string(), PropertyType::Scalar(ScalarType::Float)));
+    }
+    if has_colors {
+        vertex_def.properties.add(PropertyDef::new("red".to_string(), PropertyType::Scalar(ScalarType::UChar)));
+        vertex_def.properties.add(PropertyDef::new("green".to_string(), PropertyType::Scalar(ScalarType::UChar)));
+        vertex_def.properties.add(PropertyDef::new("blue".to_string(), PropertyType::Scalar(ScalarType::UChar)));
+    }
+    vertex_def.count = mesh.vertices.len();
+    ply.header.elements.add(vertex_def);
+
+    // Define face element
+    let mut face_def = ElementDef::new("face".to_string());
+    face_def.properties.add(PropertyDef::new(
+        "vertex_indices".to_string(),
+        PropertyType::List(ScalarType::UChar, ScalarType::Int),
+    ));
+    face_def.count = mesh.faces.len();
+    ply.header.elements.add(face_def);
+
+    // Add vertex data
+    let mut vertices_payload: Vec<DefaultElement> = Vec::with_capacity(mesh.vertices.len());
+    for v in &mesh.vertices {
+        let mut element = DefaultElement::new();
+        element.insert("x".to_string(), Property::Float(v.position.x as f32));
+        element.insert("y".to_string(), Property::Float(v.position.y as f32));
+        element.insert("z".to_string(), Property::Float(v.position.z as f32));
+        if has_normals {
+            let n = v.normal.unwrap_or(nalgebra::Vector3::new(0.0, 0.0, 0.0));
+            element.insert("nx".to_string(), Property::Float(n.x as f32));
+            element.insert("ny".to_string(), Property::Float(n.y as f32));
+            element.insert("nz".to_string(), Property::Float(n.z as f32));
+        }
+        if has_colors {
+            let c = v.color.unwrap_or(crate::VertexColor::new(255, 255, 255));
+            element.insert("red".to_string(), Property::UChar(c.r));
+            element.insert("green".to_string(), Property::UChar(c.g));
+            element.insert("blue".to_string(), Property::UChar(c.b));
+        }
+        vertices_payload.push(element);
+    }
+    ply.payload.insert("vertex".to_string(), vertices_payload);
+
+    // Add face data
+    let mut faces_payload: Vec<DefaultElement> = Vec::with_capacity(mesh.faces.len());
+    for face in &mesh.faces {
+        let mut element = DefaultElement::new();
+        element.insert(
+            "vertex_indices".to_string(),
+            Property::ListInt(vec![face[0] as i32, face[1] as i32, face[2] as i32]),
+        );
+        faces_payload.push(element);
+    }
+    ply.payload.insert("face".to_string(), faces_payload);
+
+    // Ensure header counts match payload (required for ply-rs)
+    ply.make_consistent().map_err(|e| MeshError::IoWrite {
+        path: path.to_path_buf(),
+        source: std::io::Error::new(std::io::ErrorKind::Other, format!("PLY consistency error: {:?}", e)),
+    })?;
+
+    // Write to file
+    let file = File::create(path).map_err(|e| MeshError::IoWrite {
+        path: path.to_path_buf(),
+        source: e,
+    })?;
+    let mut writer = BufWriter::new(file);
+
+    let ply_writer = Writer::new();
+    ply_writer.write_ply(&mut writer, &mut ply).map_err(|e| MeshError::IoWrite {
+        path: path.to_path_buf(),
+        source: std::io::Error::new(std::io::ErrorKind::Other, format!("PLY write error: {:?}", e)),
+    })?;
+
+    writer.flush().map_err(|e| MeshError::IoWrite {
+        path: path.to_path_buf(),
+        source: e,
+    })?;
+
+    info!(
+        "Saved {} vertices and {} faces to {:?} (PLY ASCII)",
+        mesh.vertices.len(),
+        mesh.faces.len(),
+        path
+    );
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -703,6 +1131,14 @@ mod tests {
         assert_eq!(
             MeshFormat::from_path(Path::new("test.obj")),
             Some(MeshFormat::Obj)
+        );
+        assert_eq!(
+            MeshFormat::from_path(Path::new("test.ply")),
+            Some(MeshFormat::Ply)
+        );
+        assert_eq!(
+            MeshFormat::from_path(Path::new("test.PLY")),
+            Some(MeshFormat::Ply)
         );
         assert_eq!(MeshFormat::from_path(Path::new("test.xyz")), None);
     }
@@ -865,5 +1301,306 @@ mod tests {
             "Vertex {} should be at same index after OBJ reload",
             target_vertex_idx
         );
+    }
+
+    fn create_test_ply_ascii() -> NamedTempFile {
+        let mut file = NamedTempFile::with_suffix(".ply").unwrap();
+
+        // ASCII PLY with a single triangle
+        writeln!(file, "ply").unwrap();
+        writeln!(file, "format ascii 1.0").unwrap();
+        writeln!(file, "element vertex 3").unwrap();
+        writeln!(file, "property float x").unwrap();
+        writeln!(file, "property float y").unwrap();
+        writeln!(file, "property float z").unwrap();
+        writeln!(file, "element face 1").unwrap();
+        writeln!(file, "property list uchar int vertex_indices").unwrap();
+        writeln!(file, "end_header").unwrap();
+        writeln!(file, "0 0 0").unwrap();
+        writeln!(file, "100 0 0").unwrap();
+        writeln!(file, "0 100 0").unwrap();
+        writeln!(file, "3 0 1 2").unwrap();
+
+        file
+    }
+
+    #[test]
+    fn test_load_ply_ascii() {
+        let file = create_test_ply_ascii();
+        let mesh = load_mesh(file.path()).expect("should load PLY");
+
+        assert_eq!(mesh.vertex_count(), 3);
+        assert_eq!(mesh.face_count(), 1);
+
+        let (min, max) = mesh.bounds().unwrap();
+        assert_eq!(min, Point3::new(0.0, 0.0, 0.0));
+        assert_eq!(max, Point3::new(100.0, 100.0, 0.0));
+    }
+
+    #[test]
+    fn test_save_and_reload_ply() {
+        // Create a simple mesh
+        let mut mesh = Mesh::new();
+        mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(10.0, 0.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(0.0, 10.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 10.0));
+        mesh.faces.push([0, 1, 2]);
+        mesh.faces.push([0, 2, 3]);
+        mesh.faces.push([0, 3, 1]);
+        mesh.faces.push([1, 3, 2]);
+
+        // Save to temp file (default format = ASCII)
+        let file = NamedTempFile::with_suffix(".ply").unwrap();
+        save_ply(&mesh, file.path()).expect("should save PLY");
+
+        // Reload
+        let reloaded = load_mesh(file.path()).expect("should reload PLY");
+
+        assert_eq!(reloaded.vertex_count(), 4);
+        assert_eq!(reloaded.face_count(), 4);
+
+        // Verify vertex positions are preserved
+        for (i, (orig, loaded)) in mesh.vertices.iter().zip(reloaded.vertices.iter()).enumerate() {
+            let pos_diff = (orig.position - loaded.position).norm();
+            assert!(
+                pos_diff < 1e-5,
+                "PLY vertex {} position mismatch: {:?} vs {:?}",
+                i,
+                orig.position,
+                loaded.position
+            );
+        }
+
+        // Verify face indices are preserved
+        for (i, (orig, loaded)) in mesh.faces.iter().zip(reloaded.faces.iter()).enumerate() {
+            assert_eq!(orig, loaded, "PLY face {} indices mismatch", i);
+        }
+    }
+
+    #[test]
+    fn test_save_and_reload_ply_explicit_ascii() {
+        // Create a simple mesh
+        let mut mesh = Mesh::new();
+        mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(10.0, 0.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(0.0, 10.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 10.0));
+        mesh.faces.push([0, 1, 2]);
+        mesh.faces.push([0, 2, 3]);
+        mesh.faces.push([0, 3, 1]);
+        mesh.faces.push([1, 3, 2]);
+
+        // Save to temp file (ASCII format)
+        let file = NamedTempFile::with_suffix(".ply").unwrap();
+        save_ply_ascii(&mesh, file.path()).expect("should save PLY ASCII");
+
+        // Reload
+        let reloaded = load_mesh(file.path()).expect("should reload PLY ASCII");
+
+        assert_eq!(reloaded.vertex_count(), 4);
+        assert_eq!(reloaded.face_count(), 4);
+
+        // Verify vertex positions are preserved
+        for (i, (orig, loaded)) in mesh.vertices.iter().zip(reloaded.vertices.iter()).enumerate() {
+            let pos_diff = (orig.position - loaded.position).norm();
+            assert!(
+                pos_diff < 1e-5,
+                "PLY ASCII vertex {} position mismatch: {:?} vs {:?}",
+                i,
+                orig.position,
+                loaded.position
+            );
+        }
+    }
+
+    #[test]
+    fn test_ply_with_normals() {
+        use nalgebra::Vector3;
+
+        // Create a mesh with normals
+        let mut mesh = Mesh::new();
+
+        let mut v0 = Vertex::from_coords(0.0, 0.0, 0.0);
+        v0.normal = Some(Vector3::new(0.0, 0.0, 1.0));
+        mesh.vertices.push(v0);
+
+        let mut v1 = Vertex::from_coords(10.0, 0.0, 0.0);
+        v1.normal = Some(Vector3::new(1.0, 0.0, 0.0));
+        mesh.vertices.push(v1);
+
+        let mut v2 = Vertex::from_coords(0.0, 10.0, 0.0);
+        v2.normal = Some(Vector3::new(0.0, 1.0, 0.0));
+        mesh.vertices.push(v2);
+
+        mesh.faces.push([0, 1, 2]);
+
+        // Save to PLY (binary)
+        let file = NamedTempFile::with_suffix(".ply").unwrap();
+        save_ply(&mesh, file.path()).expect("should save PLY with normals");
+
+        // Reload
+        let reloaded = load_mesh(file.path()).expect("should reload PLY with normals");
+
+        assert_eq!(reloaded.vertex_count(), 3);
+        assert_eq!(reloaded.face_count(), 1);
+
+        // Verify normals are preserved
+        for (i, (orig, loaded)) in mesh.vertices.iter().zip(reloaded.vertices.iter()).enumerate() {
+            let orig_n = orig.normal.expect("original should have normal");
+            let loaded_n = loaded.normal.expect("loaded should have normal");
+            let diff = (orig_n - loaded_n).norm();
+            assert!(
+                diff < 1e-5,
+                "PLY vertex {} normal mismatch: {:?} vs {:?}",
+                i,
+                orig_n,
+                loaded_n
+            );
+        }
+    }
+
+    #[test]
+    fn test_ply_vertex_index_preservation() {
+        // Verify PLY preserves exact vertex indices like OBJ
+        let mut mesh = Mesh::new();
+
+        // Create vertices in a specific order
+        for i in 0..10 {
+            mesh.vertices.push(Vertex::from_coords(
+                i as f64 * 10.0,
+                (i % 3) as f64 * 5.0,
+                (i / 3) as f64 * 7.0,
+            ));
+        }
+
+        // Create faces referencing specific vertices
+        mesh.faces.push([0, 1, 2]);
+        mesh.faces.push([3, 4, 5]);
+        mesh.faces.push([6, 7, 8]);
+        mesh.faces.push([0, 5, 9]);
+
+        // Save and reload PLY
+        let file = NamedTempFile::with_suffix(".ply").unwrap();
+        save_ply(&mesh, file.path()).expect("should save PLY");
+        let reloaded = load_mesh(file.path()).expect("should reload PLY");
+
+        // PLY should preserve exact vertex count
+        assert_eq!(
+            reloaded.vertex_count(),
+            mesh.vertex_count(),
+            "PLY should preserve vertex count"
+        );
+
+        // PLY should preserve exact face indices
+        for (i, (orig, loaded)) in mesh.faces.iter().zip(reloaded.faces.iter()).enumerate() {
+            assert_eq!(orig, loaded, "PLY face {} indices should match", i);
+        }
+
+        // Verify specific vertex tracking
+        let target_vertex_idx = 5;
+        let orig_pos = mesh.vertices[target_vertex_idx].position;
+        let loaded_pos = reloaded.vertices[target_vertex_idx].position;
+        let diff = (orig_pos - loaded_pos).norm();
+        assert!(
+            diff < 1e-5,
+            "Vertex {} should be at same index after PLY reload",
+            target_vertex_idx
+        );
+    }
+
+    #[test]
+    fn test_ply_with_colors() {
+        use crate::VertexColor;
+
+        // Create a mesh with vertex colors
+        let mut mesh = Mesh::new();
+
+        let mut v0 = Vertex::from_coords(0.0, 0.0, 0.0);
+        v0.color = Some(VertexColor::new(255, 0, 0)); // Red
+        mesh.vertices.push(v0);
+
+        let mut v1 = Vertex::from_coords(10.0, 0.0, 0.0);
+        v1.color = Some(VertexColor::new(0, 255, 0)); // Green
+        mesh.vertices.push(v1);
+
+        let mut v2 = Vertex::from_coords(0.0, 10.0, 0.0);
+        v2.color = Some(VertexColor::new(0, 0, 255)); // Blue
+        mesh.vertices.push(v2);
+
+        mesh.faces.push([0, 1, 2]);
+
+        // Save to PLY (ASCII)
+        let file = NamedTempFile::with_suffix(".ply").unwrap();
+        save_ply(&mesh, file.path()).expect("should save PLY with colors");
+
+        // Reload
+        let reloaded = load_mesh(file.path()).expect("should reload PLY with colors");
+
+        assert_eq!(reloaded.vertex_count(), 3);
+        assert_eq!(reloaded.face_count(), 1);
+
+        // Verify colors are preserved
+        let c0 = reloaded.vertices[0].color.expect("v0 should have color");
+        assert_eq!(c0.r, 255);
+        assert_eq!(c0.g, 0);
+        assert_eq!(c0.b, 0);
+
+        let c1 = reloaded.vertices[1].color.expect("v1 should have color");
+        assert_eq!(c1.r, 0);
+        assert_eq!(c1.g, 255);
+        assert_eq!(c1.b, 0);
+
+        let c2 = reloaded.vertices[2].color.expect("v2 should have color");
+        assert_eq!(c2.r, 0);
+        assert_eq!(c2.g, 0);
+        assert_eq!(c2.b, 255);
+    }
+
+    #[test]
+    fn test_ply_with_colors_and_normals() {
+        use crate::VertexColor;
+        use nalgebra::Vector3;
+
+        // Create a mesh with both vertex colors and normals
+        let mut mesh = Mesh::new();
+
+        let mut v0 = Vertex::from_coords(0.0, 0.0, 0.0);
+        v0.color = Some(VertexColor::new(128, 64, 32));
+        v0.normal = Some(Vector3::new(0.0, 0.0, 1.0));
+        mesh.vertices.push(v0);
+
+        let mut v1 = Vertex::from_coords(10.0, 0.0, 0.0);
+        v1.color = Some(VertexColor::new(200, 100, 50));
+        v1.normal = Some(Vector3::new(1.0, 0.0, 0.0));
+        mesh.vertices.push(v1);
+
+        let mut v2 = Vertex::from_coords(0.0, 10.0, 0.0);
+        v2.color = Some(VertexColor::new(50, 150, 250));
+        v2.normal = Some(Vector3::new(0.0, 1.0, 0.0));
+        mesh.vertices.push(v2);
+
+        mesh.faces.push([0, 1, 2]);
+
+        // Save to PLY
+        let file = NamedTempFile::with_suffix(".ply").unwrap();
+        save_ply(&mesh, file.path()).expect("should save PLY with colors and normals");
+
+        // Reload
+        let reloaded = load_mesh(file.path()).expect("should reload PLY with colors and normals");
+
+        // Verify both colors and normals are preserved
+        for (i, (orig, loaded)) in mesh.vertices.iter().zip(reloaded.vertices.iter()).enumerate() {
+            // Check color
+            let orig_c = orig.color.expect("original should have color");
+            let loaded_c = loaded.color.expect("loaded should have color");
+            assert_eq!(orig_c, loaded_c, "PLY vertex {} color mismatch", i);
+
+            // Check normal
+            let orig_n = orig.normal.expect("original should have normal");
+            let loaded_n = loaded.normal.expect("loaded should have normal");
+            let diff = (orig_n - loaded_n).norm();
+            assert!(diff < 1e-5, "PLY vertex {} normal mismatch", i);
+        }
     }
 }

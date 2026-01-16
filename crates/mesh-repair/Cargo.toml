@@ -14,6 +14,7 @@ stl_io.workspace = true
 tobj.workspace = true
 zip.workspace = true
 quick-xml.workspace = true
+ply-rs.workspace = true
 hashbrown.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

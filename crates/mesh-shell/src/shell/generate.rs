@@ -2,11 +2,44 @@
 //!
 //! Generates a printable shell from the inner surface.
 
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use mesh_repair::{compute_vertex_normals, Mesh};
 
-use super::rim::generate_rim;
+use super::rim::{generate_rim, generate_rim_for_sdf_shell};
+use super::validation::{validate_shell, ShellValidationResult};
+use crate::offset::grid::SdfGrid;
+use crate::offset::extract::extract_isosurface;
+
+/// Method for generating the outer surface of the shell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WallGenerationMethod {
+    /// Normal-based offset (fast, but may have inconsistent thickness at corners).
+    ///
+    /// Each vertex is offset along its normal by the wall thickness.
+    /// Pros: Fast, preserves vertex correspondence with inner surface.
+    /// Cons: Wall thickness varies at corners (thinner at convex, thicker at concave).
+    #[default]
+    Normal,
+
+    /// SDF-based offset (robust, consistent wall thickness).
+    ///
+    /// Computes a signed distance field and extracts an isosurface at the
+    /// desired wall thickness distance. This ensures consistent wall thickness
+    /// regardless of surface curvature.
+    /// Pros: Consistent wall thickness, handles concave regions correctly.
+    /// Cons: Slower, may change vertex count, requires additional memory.
+    Sdf,
+}
+
+impl std::fmt::Display for WallGenerationMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WallGenerationMethod::Normal => write!(f, "normal"),
+            WallGenerationMethod::Sdf => write!(f, "sdf"),
+        }
+    }
+}
 
 /// Parameters for shell generation.
 #[derive(Debug, Clone)]
@@ -15,6 +48,17 @@ pub struct ShellParams {
     pub wall_thickness_mm: f64,
     /// Minimum acceptable wall thickness.
     pub min_thickness_mm: f64,
+    /// Whether to validate the shell after generation.
+    pub validate_after_generation: bool,
+    /// Method for generating the outer surface.
+    pub wall_generation_method: WallGenerationMethod,
+    /// Voxel size for SDF-based wall generation (mm).
+    /// Smaller values give more detail but use more memory.
+    /// Only used when `wall_generation_method` is `Sdf`.
+    pub sdf_voxel_size_mm: f64,
+    /// Maximum voxels for SDF grid (memory limit).
+    /// Only used when `wall_generation_method` is `Sdf`.
+    pub sdf_max_voxels: usize,
 }
 
 impl Default for ShellParams {
@@ -22,6 +66,34 @@ impl Default for ShellParams {
         Self {
             wall_thickness_mm: 2.5,
             min_thickness_mm: 1.5,
+            validate_after_generation: true,
+            wall_generation_method: WallGenerationMethod::Normal,
+            sdf_voxel_size_mm: 0.5,
+            sdf_max_voxels: 50_000_000,
+        }
+    }
+}
+
+impl ShellParams {
+    /// Create params optimized for high-quality output with consistent wall thickness.
+    ///
+    /// Uses SDF-based wall generation for consistent thickness at corners.
+    pub fn high_quality() -> Self {
+        Self {
+            wall_generation_method: WallGenerationMethod::Sdf,
+            sdf_voxel_size_mm: 0.3,
+            ..Default::default()
+        }
+    }
+
+    /// Create params optimized for fast generation.
+    ///
+    /// Uses normal-based offset which is faster but may have inconsistent thickness.
+    pub fn fast() -> Self {
+        Self {
+            wall_generation_method: WallGenerationMethod::Normal,
+            validate_after_generation: false,
+            ..Default::default()
         }
     }
 }
@@ -39,12 +111,16 @@ pub struct ShellResult {
     pub total_face_count: usize,
     /// Boundary loop size (number of edges).
     pub boundary_size: usize,
+    /// Validation result (if validation was performed).
+    pub validation: Option<ShellValidationResult>,
+    /// Wall generation method used.
+    pub wall_method: WallGenerationMethod,
 }
 
 /// Generate a printable shell from the inner surface.
 ///
-/// Creates outer surface by offsetting along normals, then connects
-/// inner and outer at boundaries with a rim.
+/// Creates outer surface using the configured method (normal or SDF-based),
+/// then connects inner and outer at boundaries with a rim.
 ///
 /// # Arguments
 /// * `inner_shell` - The inner surface mesh (from offset stage)
@@ -53,8 +129,19 @@ pub struct ShellResult {
 /// # Returns
 /// A tuple of (shell mesh, generation result).
 pub fn generate_shell(inner_shell: &Mesh, params: &ShellParams) -> (Mesh, ShellResult) {
-    info!("Generating shell with thickness={:.2}mm", params.wall_thickness_mm);
+    info!(
+        "Generating shell with thickness={:.2}mm, method={}",
+        params.wall_thickness_mm, params.wall_generation_method
+    );
 
+    match params.wall_generation_method {
+        WallGenerationMethod::Normal => generate_shell_normal(inner_shell, params),
+        WallGenerationMethod::Sdf => generate_shell_sdf(inner_shell, params),
+    }
+}
+
+/// Generate shell using normal-based offset (original fast method).
+fn generate_shell_normal(inner_shell: &Mesh, params: &ShellParams) -> (Mesh, ShellResult) {
     let n = inner_shell.vertices.len();
     let mut shell = Mesh::new();
 
@@ -112,15 +199,172 @@ pub fn generate_shell(inner_shell: &Mesh, params: &ShellParams) -> (Mesh, ShellR
         shell.faces.len()
     );
 
+    // Optionally validate the generated shell
+    let validation = if params.validate_after_generation {
+        let validation_result = validate_shell(&shell);
+        if !validation_result.is_printable() {
+            warn!(
+                "Generated shell has {} validation issue(s)",
+                validation_result.issue_count()
+            );
+        }
+        Some(validation_result)
+    } else {
+        None
+    };
+
     let result = ShellResult {
         inner_vertex_count: n,
         outer_vertex_count: n,
         rim_face_count,
         total_face_count: shell.faces.len(),
         boundary_size,
+        validation,
+        wall_method: WallGenerationMethod::Normal,
     };
 
     (shell, result)
+}
+
+/// Generate shell using SDF-based offset for consistent wall thickness.
+fn generate_shell_sdf(inner_shell: &Mesh, params: &ShellParams) -> (Mesh, ShellResult) {
+    let inner_vertex_count = inner_shell.vertices.len();
+
+    // Step 1: Ensure inner mesh has normals
+    let mut inner_with_normals = inner_shell.clone();
+    compute_vertex_normals(&mut inner_with_normals);
+
+    // Step 2: Create SDF grid for the inner surface
+    let padding = params.wall_thickness_mm + params.sdf_voxel_size_mm * 3.0;
+    let grid_result = SdfGrid::from_mesh_bounds(
+        &inner_with_normals,
+        params.sdf_voxel_size_mm,
+        padding,
+        params.sdf_max_voxels,
+    );
+
+    let mut grid = match grid_result {
+        Ok(g) => g,
+        Err(e) => {
+            warn!("SDF grid creation failed: {:?}, falling back to normal method", e);
+            return generate_shell_normal(inner_shell, params);
+        }
+    };
+
+    info!(
+        dims = ?grid.dims,
+        total_voxels = grid.total_voxels(),
+        "Created SDF grid for wall generation"
+    );
+
+    // Step 3: Compute SDF of inner surface
+    grid.compute_sdf(&inner_with_normals);
+
+    // Step 4: Offset the SDF by wall thickness to get outer surface
+    // Adding positive offset shifts isosurface outward
+    for val in &mut grid.values {
+        *val -= params.wall_thickness_mm as f32;
+    }
+
+    debug!("Applied wall thickness offset to SDF");
+
+    // Step 5: Extract outer surface from offset SDF
+    let outer_mesh = match extract_isosurface(&grid) {
+        Ok(m) => m,
+        Err(e) => {
+            warn!("Isosurface extraction failed: {:?}, falling back to normal method", e);
+            return generate_shell_normal(inner_shell, params);
+        }
+    };
+
+    let outer_vertex_count = outer_mesh.vertices.len();
+    debug!(
+        "Extracted outer surface: {} vertices, {} faces",
+        outer_vertex_count,
+        outer_mesh.faces.len()
+    );
+
+    // Step 6: Combine inner and outer surfaces into shell
+    let mut shell = Mesh::new();
+
+    // Add inner vertices
+    for vertex in &inner_with_normals.vertices {
+        shell.vertices.push(vertex.clone());
+    }
+
+    // Add outer vertices (offset by inner count)
+    let inner_count = inner_with_normals.vertices.len() as u32;
+    for vertex in &outer_mesh.vertices {
+        shell.vertices.push(vertex.clone());
+    }
+
+    // Add inner faces (reversed winding so normal points inward)
+    for face in &inner_with_normals.faces {
+        shell.faces.push([face[0], face[2], face[1]]);
+    }
+
+    // Add outer faces (keep original winding, offset indices)
+    for face in &outer_mesh.faces {
+        shell.faces.push([
+            face[0] + inner_count,
+            face[1] + inner_count,
+            face[2] + inner_count,
+        ]);
+    }
+
+    // Step 7: Generate rim connecting inner and outer boundaries
+    let (rim_faces, boundary_size) = generate_rim_for_sdf_shell(
+        &inner_with_normals,
+        &outer_mesh,
+        inner_count as usize,
+    );
+
+    let rim_face_count = rim_faces.len();
+    for face in rim_faces {
+        shell.faces.push(face);
+    }
+
+    info!(
+        "SDF shell generation complete: {} vertices, {} faces (rim: {})",
+        shell.vertices.len(),
+        shell.faces.len(),
+        rim_face_count
+    );
+
+    // Optionally validate the generated shell
+    let validation = if params.validate_after_generation {
+        let validation_result = validate_shell(&shell);
+        if !validation_result.is_printable() {
+            warn!(
+                "Generated shell has {} validation issue(s)",
+                validation_result.issue_count()
+            );
+        }
+        Some(validation_result)
+    } else {
+        None
+    };
+
+    let result = ShellResult {
+        inner_vertex_count,
+        outer_vertex_count,
+        rim_face_count,
+        total_face_count: shell.faces.len(),
+        boundary_size,
+        validation,
+        wall_method: WallGenerationMethod::Sdf,
+    };
+
+    (shell, result)
+}
+
+/// Generate a shell without automatic validation.
+///
+/// This is equivalent to calling `generate_shell` with `validate_after_generation = false`.
+pub fn generate_shell_no_validation(inner_shell: &Mesh, params: &ShellParams) -> (Mesh, ShellResult) {
+    let mut params = params.clone();
+    params.validate_after_generation = false;
+    generate_shell(inner_shell, &params)
 }
 
 #[cfg(test)]
@@ -168,6 +412,28 @@ mod tests {
         let params = ShellParams::default();
         assert_eq!(params.wall_thickness_mm, 2.5);
         assert_eq!(params.min_thickness_mm, 1.5);
+        assert!(params.validate_after_generation);
+        assert_eq!(params.wall_generation_method, WallGenerationMethod::Normal);
+    }
+
+    #[test]
+    fn test_shell_params_high_quality() {
+        let params = ShellParams::high_quality();
+        assert_eq!(params.wall_generation_method, WallGenerationMethod::Sdf);
+        assert!(params.sdf_voxel_size_mm < 0.5);
+    }
+
+    #[test]
+    fn test_shell_params_fast() {
+        let params = ShellParams::fast();
+        assert_eq!(params.wall_generation_method, WallGenerationMethod::Normal);
+        assert!(!params.validate_after_generation);
+    }
+
+    #[test]
+    fn test_wall_generation_method_display() {
+        assert_eq!(format!("{}", WallGenerationMethod::Normal), "normal");
+        assert_eq!(format!("{}", WallGenerationMethod::Sdf), "sdf");
     }
 
     #[test]
@@ -177,10 +443,11 @@ mod tests {
 
         let (shell, result) = generate_shell(&inner, &params);
 
-        // Should have 2x vertices (inner + outer)
+        // Should have 2x vertices (inner + outer) for normal method
         assert_eq!(shell.vertices.len(), inner.vertices.len() * 2);
         assert_eq!(result.inner_vertex_count, inner.vertices.len());
         assert_eq!(result.outer_vertex_count, inner.vertices.len());
+        assert_eq!(result.wall_method, WallGenerationMethod::Normal);
     }
 
     #[test]
@@ -193,5 +460,67 @@ mod tests {
         // Should have inner + outer + rim faces
         assert!(shell.faces.len() > inner.faces.len() * 2);
         assert!(result.rim_face_count > 0);
+    }
+
+    #[test]
+    fn test_generate_shell_sdf_method() {
+        let inner = create_open_box();
+        let params = ShellParams {
+            wall_generation_method: WallGenerationMethod::Sdf,
+            sdf_voxel_size_mm: 1.0, // Coarse for fast test
+            validate_after_generation: false,
+            ..Default::default()
+        };
+
+        let (shell, result) = generate_shell(&inner, &params);
+
+        // Should produce a valid mesh
+        assert!(!shell.vertices.is_empty());
+        assert!(!shell.faces.is_empty());
+        assert_eq!(result.wall_method, WallGenerationMethod::Sdf);
+
+        // Inner vertex count should match
+        assert_eq!(result.inner_vertex_count, inner.vertices.len());
+
+        // Outer vertex count may differ from inner (SDF remeshes)
+        assert!(result.outer_vertex_count > 0);
+    }
+
+    #[test]
+    fn test_sdf_produces_larger_outer_surface() {
+        let inner = create_open_box();
+        let wall_thickness = 2.0;
+
+        let params = ShellParams {
+            wall_thickness_mm: wall_thickness,
+            wall_generation_method: WallGenerationMethod::Sdf,
+            sdf_voxel_size_mm: 0.5,
+            validate_after_generation: false,
+            ..Default::default()
+        };
+
+        let (shell, _result) = generate_shell(&inner, &params);
+
+        // Get bounds of inner and combined shell
+        let inner_bounds = inner.bounds().unwrap();
+        let shell_bounds = shell.bounds().unwrap();
+
+        // Shell should be larger due to wall thickness
+        let inner_extent = inner_bounds.1 - inner_bounds.0;
+        let shell_extent = shell_bounds.1 - shell_bounds.0;
+
+        // Shell should be ~2*wall_thickness larger in each dimension
+        assert!(
+            shell_extent.x > inner_extent.x,
+            "Shell should be wider: {} vs {}",
+            shell_extent.x,
+            inner_extent.x
+        );
+        assert!(
+            shell_extent.y > inner_extent.y,
+            "Shell should be deeper: {} vs {}",
+            shell_extent.y,
+            inner_extent.y
+        );
     }
 }

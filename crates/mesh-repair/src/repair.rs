@@ -2,11 +2,187 @@
 
 use hashbrown::{HashMap, HashSet};
 use nalgebra::Point3;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::adjacency::MeshAdjacency;
 use crate::error::MeshResult;
+use crate::holes::fill_holes_with_max_edges;
+use crate::winding::fix_winding_order;
 use crate::{Mesh, Triangle};
+
+/// Configuration parameters for mesh repair operations.
+///
+/// All thresholds are in the same units as the mesh coordinates (typically millimeters).
+///
+/// # Example
+///
+/// ```
+/// use mesh_repair::RepairParams;
+///
+/// // Use defaults (good for mm-scale meshes)
+/// let params = RepairParams::default();
+///
+/// // Or customize for your use case
+/// let params = RepairParams {
+///     weld_epsilon: 0.01,  // More aggressive welding for noisy scans
+///     degenerate_area_threshold: 0.001,
+///     ..Default::default()
+/// };
+/// ```
+#[derive(Debug, Clone)]
+pub struct RepairParams {
+    /// Distance threshold for vertex welding.
+    ///
+    /// Vertices closer than this distance will be merged into one.
+    /// Larger values are more aggressive and may merge intentional detail.
+    /// Smaller values preserve more detail but may leave gaps.
+    ///
+    /// Default: `1e-6` (0.000001 mm, extremely conservative)
+    ///
+    /// Recommended ranges:
+    /// - High-precision CAD: `1e-9` to `1e-6`
+    /// - 3D scans: `0.001` to `0.1` (depending on scan noise)
+    /// - Low-poly models: `0.01` to `1.0`
+    pub weld_epsilon: f64,
+
+    /// Minimum triangle area threshold.
+    ///
+    /// Triangles with area below this threshold are considered degenerate
+    /// and will be removed. Very small triangles often cause numerical
+    /// issues in downstream processing.
+    ///
+    /// Default: `1e-9` (effectively zero for mm-scale meshes)
+    pub degenerate_area_threshold: f64,
+
+    /// Maximum triangle aspect ratio threshold.
+    ///
+    /// Triangles with aspect ratio (longest edge / shortest altitude) above
+    /// this threshold are considered degenerate "sliver" triangles.
+    /// Set to `f64::INFINITY` to disable this check.
+    ///
+    /// Default: `1000.0` (very thin triangles are removed)
+    pub degenerate_aspect_ratio: f64,
+
+    /// Minimum edge length threshold.
+    ///
+    /// Triangles with any edge shorter than this are considered degenerate.
+    /// Set to `0.0` to disable this check.
+    ///
+    /// Default: `1e-9` (effectively zero)
+    pub degenerate_min_edge_length: f64,
+
+    /// Maximum number of edges in a hole to auto-fill.
+    ///
+    /// Holes with more edges than this will be skipped (with a warning).
+    /// Larger holes often require manual intervention or more sophisticated
+    /// filling algorithms.
+    ///
+    /// Default: `100`
+    pub max_hole_edges: usize,
+
+    /// Whether to attempt to fix winding order inconsistencies.
+    ///
+    /// When enabled, the repair pipeline will try to make all face normals
+    /// point consistently outward. This requires the mesh to have a clear
+    /// "outside" direction.
+    ///
+    /// Default: `true`
+    pub fix_winding: bool,
+
+    /// Whether to remove non-manifold edges.
+    ///
+    /// Non-manifold edges are edges shared by more than 2 faces.
+    /// When enabled, excess faces are removed (keeping the 2 largest).
+    ///
+    /// Default: `true`
+    pub fix_non_manifold: bool,
+
+    /// Whether to fill holes after other repairs.
+    ///
+    /// When enabled, boundary loops (holes) up to `max_hole_edges` in size
+    /// will be filled using ear-clipping triangulation.
+    ///
+    /// Default: `false` (holes are often intentional)
+    pub fill_holes: bool,
+
+    /// Whether to compute vertex normals after repair.
+    ///
+    /// Default: `true`
+    pub compute_normals: bool,
+
+    /// Whether to remove unreferenced vertices after repair.
+    ///
+    /// Default: `true`
+    pub remove_unreferenced: bool,
+}
+
+impl Default for RepairParams {
+    fn default() -> Self {
+        Self {
+            weld_epsilon: 1e-6,
+            degenerate_area_threshold: 1e-9,
+            degenerate_aspect_ratio: 1000.0,
+            degenerate_min_edge_length: 1e-9,
+            max_hole_edges: 100,
+            fix_winding: true,
+            fix_non_manifold: true,
+            fill_holes: false,
+            compute_normals: true,
+            remove_unreferenced: true,
+        }
+    }
+}
+
+impl RepairParams {
+    /// Create params optimized for 3D scan data.
+    ///
+    /// Uses more aggressive welding and degenerate removal suitable
+    /// for noisy scan data (e.g., from structured light or photogrammetry).
+    pub fn for_scans() -> Self {
+        Self {
+            weld_epsilon: 0.01, // 0.01mm - typical scan noise level
+            degenerate_area_threshold: 0.0001, // 0.0001 mm²
+            degenerate_aspect_ratio: 100.0, // More aggressive sliver removal
+            degenerate_min_edge_length: 0.001, // 0.001mm minimum edge
+            max_hole_edges: 200, // Allow larger hole filling
+            fill_holes: true,    // Auto-fill small holes from scan gaps
+            ..Default::default()
+        }
+    }
+
+    /// Create params optimized for CAD models.
+    ///
+    /// Uses conservative settings to preserve intentional geometry.
+    pub fn for_cad() -> Self {
+        Self {
+            weld_epsilon: 1e-9,
+            degenerate_area_threshold: 1e-12,
+            degenerate_aspect_ratio: f64::INFINITY, // Don't remove thin triangles
+            degenerate_min_edge_length: 0.0,
+            max_hole_edges: 50,
+            fill_holes: false, // CAD holes are usually intentional
+            ..Default::default()
+        }
+    }
+
+    /// Create params optimized for 3D printing preparation.
+    ///
+    /// Ensures watertight, manifold output suitable for slicing.
+    pub fn for_printing() -> Self {
+        Self {
+            weld_epsilon: 0.001, // 0.001mm
+            degenerate_area_threshold: 0.00001, // 0.00001 mm²
+            degenerate_aspect_ratio: 500.0,
+            degenerate_min_edge_length: 0.0001,
+            max_hole_edges: 500, // Fill even large holes
+            fix_winding: true,
+            fix_non_manifold: true,
+            fill_holes: true, // Important for watertight output
+            compute_normals: true,
+            remove_unreferenced: true,
+        }
+    }
+}
 
 /// Remove triangles with area below threshold.
 ///
@@ -26,6 +202,75 @@ pub fn remove_degenerate_triangles(mesh: &mut Mesh, area_threshold: f64) -> usiz
     let removed = original_count - mesh.faces.len();
     if removed > 0 {
         info!("Removed {} degenerate triangles (area < {:.6})", removed, area_threshold);
+    }
+    removed
+}
+
+/// Remove degenerate triangles using multiple criteria.
+///
+/// A triangle is considered degenerate if:
+/// - Area is below `area_threshold`
+/// - Aspect ratio exceeds `max_aspect_ratio` (unless set to infinity)
+/// - Any edge is shorter than `min_edge_length` (unless set to 0)
+///
+/// Returns the number of triangles removed.
+pub fn remove_degenerate_triangles_enhanced(
+    mesh: &mut Mesh,
+    area_threshold: f64,
+    max_aspect_ratio: f64,
+    min_edge_length: f64,
+) -> usize {
+    let original_count = mesh.faces.len();
+
+    mesh.faces.retain(|&[i0, i1, i2]| {
+        let p0 = mesh.vertices[i0 as usize].position;
+        let p1 = mesh.vertices[i1 as usize].position;
+        let p2 = mesh.vertices[i2 as usize].position;
+
+        let tri = Triangle::new(p0, p1, p2);
+
+        // Check area
+        let area = tri.area();
+        if area < area_threshold {
+            return false;
+        }
+
+        // Check edge lengths if threshold is set
+        if min_edge_length > 0.0 {
+            let e0 = (p1 - p0).norm();
+            let e1 = (p2 - p1).norm();
+            let e2 = (p0 - p2).norm();
+            if e0 < min_edge_length || e1 < min_edge_length || e2 < min_edge_length {
+                return false;
+            }
+        }
+
+        // Check aspect ratio if threshold is finite
+        if max_aspect_ratio.is_finite() {
+            let e0 = (p1 - p0).norm();
+            let e1 = (p2 - p1).norm();
+            let e2 = (p0 - p2).norm();
+            let longest_edge = e0.max(e1).max(e2);
+
+            // Aspect ratio = longest edge / (2 * area / longest edge)
+            // = longest_edge^2 / (2 * area)
+            if area > 0.0 {
+                let aspect = (longest_edge * longest_edge) / (2.0 * area);
+                if aspect > max_aspect_ratio {
+                    return false;
+                }
+            }
+        }
+
+        true
+    });
+
+    let removed = original_count - mesh.faces.len();
+    if removed > 0 {
+        info!(
+            "Removed {} degenerate triangles (area<{:.2e}, aspect>{:.0}, edge<{:.2e})",
+            removed, area_threshold, max_aspect_ratio, min_edge_length
+        );
     }
     removed
 }
@@ -414,52 +659,144 @@ pub fn fix_inverted_faces(mesh: &mut Mesh, original: &Mesh) -> usize {
     flipped_count
 }
 
-/// Run the full repair pipeline on a mesh.
+/// Run the full repair pipeline on a mesh using default parameters.
 ///
-/// Repairs in order:
-/// 1. Remove degenerate triangles
-/// 2. Weld vertices
-/// 3. Remove duplicate faces (introduced by welding)
-/// 4. Fix non-manifold edges (remove smallest faces causing >2 faces per edge)
-/// 5. Remove unreferenced vertices
-/// 6. Compute vertex normals
+/// This is equivalent to `repair_mesh_with_config(mesh, &RepairParams::default())`.
+///
+/// # Repair Steps
+///
+/// 1. Remove degenerate triangles (area, aspect ratio, edge length checks)
+/// 2. Weld nearby vertices
+/// 3. Remove duplicate faces
+/// 4. Fix non-manifold edges (optional)
+/// 5. Fix winding order (optional)
+/// 6. Fill holes (optional)
+/// 7. Remove unreferenced vertices
+/// 8. Compute vertex normals
+///
+/// # Example
+///
+/// ```
+/// use mesh_repair::{Mesh, repair_mesh};
+///
+/// let mut mesh = Mesh::new();
+/// // ... populate mesh ...
+/// repair_mesh(&mut mesh).unwrap();
+/// ```
 pub fn repair_mesh(mesh: &mut Mesh) -> MeshResult<()> {
-    repair_mesh_with_params(mesh, 0.001, 1e-6)
+    repair_mesh_with_config(mesh, &RepairParams::default())
 }
 
 /// Run the full repair pipeline on a mesh with custom parameters.
+///
+/// # Deprecated
+///
+/// Use `repair_mesh_with_config` instead for more control.
 ///
 /// # Arguments
 /// * `mesh` - The mesh to repair
 /// * `weld_epsilon` - Distance threshold for welding vertices
 /// * `degenerate_threshold` - Area threshold for removing degenerate triangles
+#[deprecated(since = "0.2.0", note = "Use repair_mesh_with_config with RepairParams instead")]
 pub fn repair_mesh_with_params(
     mesh: &mut Mesh,
     weld_epsilon: f64,
     degenerate_threshold: f64,
 ) -> MeshResult<()> {
-    info!("Starting mesh repair pipeline");
+    let params = RepairParams {
+        weld_epsilon,
+        degenerate_area_threshold: degenerate_threshold,
+        ..Default::default()
+    };
+    repair_mesh_with_config(mesh, &params)
+}
+
+/// Run the full repair pipeline on a mesh with configurable parameters.
+///
+/// This is the main entry point for mesh repair with full control over
+/// all repair parameters.
+///
+/// # Arguments
+/// * `mesh` - The mesh to repair (modified in place)
+/// * `params` - Configuration parameters for repair operations
+///
+/// # Example
+///
+/// ```
+/// use mesh_repair::{Mesh, RepairParams, repair_mesh_with_config};
+///
+/// let mut mesh = Mesh::new();
+/// // ... populate mesh ...
+///
+/// // Use scan-optimized parameters
+/// let params = RepairParams::for_scans();
+/// repair_mesh_with_config(&mut mesh, &params).unwrap();
+/// ```
+pub fn repair_mesh_with_config(mesh: &mut Mesh, params: &RepairParams) -> MeshResult<()> {
+    info!(
+        "Starting mesh repair pipeline (weld={:.2e}, area={:.2e}, aspect={:.0})",
+        params.weld_epsilon,
+        params.degenerate_area_threshold,
+        params.degenerate_aspect_ratio
+    );
 
     let initial_verts = mesh.vertex_count();
     let initial_faces = mesh.face_count();
 
-    // 1. Remove degenerate triangles
-    remove_degenerate_triangles(mesh, degenerate_threshold);
+    if initial_faces == 0 {
+        warn!("Mesh has no faces, skipping repair");
+        return Ok(());
+    }
+
+    // 1. Remove degenerate triangles (enhanced version with multiple criteria)
+    remove_degenerate_triangles_enhanced(
+        mesh,
+        params.degenerate_area_threshold,
+        params.degenerate_aspect_ratio,
+        params.degenerate_min_edge_length,
+    );
 
     // 2. Weld vertices
-    weld_vertices(mesh, weld_epsilon);
+    weld_vertices(mesh, params.weld_epsilon);
 
-    // 3. Remove duplicate faces (welding can create duplicates when nearby triangles merge)
+    // 3. Remove duplicate faces (welding can create duplicates)
     remove_duplicate_faces(mesh);
 
-    // 4. Fix non-manifold edges (welding can create edges shared by >2 faces)
-    fix_non_manifold_edges(mesh);
+    // 4. Fix non-manifold edges (optional)
+    if params.fix_non_manifold {
+        fix_non_manifold_edges(mesh);
+    }
 
-    // 5. Remove unreferenced vertices
-    remove_unreferenced_vertices(mesh);
+    // 5. Fix winding order (optional)
+    if params.fix_winding {
+        if let Err(e) = fix_winding_order(mesh) {
+            warn!("Could not fix winding order: {:?}", e);
+        }
+    }
 
-    // 6. Compute vertex normals
-    compute_vertex_normals(mesh);
+    // 6. Fill holes (optional)
+    if params.fill_holes {
+        match fill_holes_with_max_edges(mesh, params.max_hole_edges) {
+            Ok(filled) => {
+                if filled > 0 {
+                    debug!("Filled {} holes", filled);
+                }
+            }
+            Err(e) => {
+                warn!("Could not fill holes: {:?}", e);
+            }
+        }
+    }
+
+    // 7. Remove unreferenced vertices (optional but usually wanted)
+    if params.remove_unreferenced {
+        remove_unreferenced_vertices(mesh);
+    }
+
+    // 8. Compute vertex normals (optional)
+    if params.compute_normals {
+        compute_vertex_normals(mesh);
+    }
 
     info!(
         "Repair complete: {} verts → {}, {} faces → {}",
@@ -612,5 +949,151 @@ mod tests {
         let fixed_count = fix_inverted_faces(&mut mesh, &original);
         assert_eq!(fixed_count, 0, "Should not fix any faces");
         assert_eq!(mesh.faces[0], [0, 1, 2], "Face should remain unchanged");
+    }
+
+    #[test]
+    fn test_repair_params_default() {
+        let params = RepairParams::default();
+        assert_eq!(params.weld_epsilon, 1e-6);
+        assert_eq!(params.degenerate_area_threshold, 1e-9);
+        assert_eq!(params.degenerate_aspect_ratio, 1000.0);
+        assert_eq!(params.max_hole_edges, 100);
+        assert!(params.fix_winding);
+        assert!(params.fix_non_manifold);
+        assert!(!params.fill_holes);
+        assert!(params.compute_normals);
+    }
+
+    #[test]
+    fn test_repair_params_for_scans() {
+        let params = RepairParams::for_scans();
+        // Scan params should be more aggressive
+        assert!(params.weld_epsilon > RepairParams::default().weld_epsilon);
+        assert!(params.fill_holes); // Scans often have gaps
+    }
+
+    #[test]
+    fn test_repair_params_for_cad() {
+        let params = RepairParams::for_cad();
+        // CAD params should be more conservative
+        assert!(params.weld_epsilon < RepairParams::default().weld_epsilon);
+        assert!(!params.fill_holes); // CAD holes are intentional
+        assert!(params.degenerate_aspect_ratio.is_infinite());
+    }
+
+    #[test]
+    fn test_repair_params_for_printing() {
+        let params = RepairParams::for_printing();
+        assert!(params.fill_holes); // Printing needs watertight
+        assert!(params.fix_winding);
+        assert!(params.fix_non_manifold);
+    }
+
+    #[test]
+    fn test_remove_degenerate_triangles_enhanced_area() {
+        let mut mesh = Mesh::new();
+        mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(10.0, 0.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(0.0, 10.0, 0.0));
+        // Normal triangle (area = 50)
+        mesh.faces.push([0, 1, 2]);
+
+        // Tiny triangle (area ~= 0.00005)
+        mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(0.01, 0.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(0.0, 0.01, 0.0));
+        mesh.faces.push([3, 4, 5]);
+
+        let removed = remove_degenerate_triangles_enhanced(
+            &mut mesh,
+            0.001, // area threshold
+            f64::INFINITY, // no aspect ratio check
+            0.0, // no edge length check
+        );
+
+        assert_eq!(removed, 1);
+        assert_eq!(mesh.face_count(), 1);
+    }
+
+    #[test]
+    fn test_remove_degenerate_triangles_enhanced_aspect_ratio() {
+        let mut mesh = Mesh::new();
+        // Normal triangle
+        mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(10.0, 0.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(5.0, 8.66, 0.0)); // ~equilateral
+        mesh.faces.push([0, 1, 2]);
+
+        // Very thin sliver triangle (high aspect ratio)
+        mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(100.0, 0.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(50.0, 0.01, 0.0)); // Very thin
+        mesh.faces.push([3, 4, 5]);
+
+        let removed = remove_degenerate_triangles_enhanced(
+            &mut mesh,
+            0.0, // no area check
+            100.0, // aspect ratio threshold
+            0.0, // no edge length check
+        );
+
+        assert_eq!(removed, 1);
+        assert_eq!(mesh.face_count(), 1);
+    }
+
+    #[test]
+    fn test_remove_degenerate_triangles_enhanced_edge_length() {
+        let mut mesh = Mesh::new();
+        // Normal triangle with reasonable edges
+        mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(10.0, 0.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(0.0, 10.0, 0.0));
+        mesh.faces.push([0, 1, 2]);
+
+        // Triangle with a tiny edge
+        mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(0.0001, 0.0, 0.0)); // Very short edge
+        mesh.vertices.push(Vertex::from_coords(0.0, 10.0, 0.0));
+        mesh.faces.push([3, 4, 5]);
+
+        let removed = remove_degenerate_triangles_enhanced(
+            &mut mesh,
+            0.0, // no area check
+            f64::INFINITY, // no aspect ratio check
+            0.001, // min edge length
+        );
+
+        assert_eq!(removed, 1);
+        assert_eq!(mesh.face_count(), 1);
+    }
+
+    #[test]
+    fn test_repair_mesh_with_config() {
+        let mut mesh = Mesh::new();
+        // Create a simple mesh that needs repair
+        mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(10.0, 0.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(0.0, 10.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(10.0001, 0.0, 0.0)); // Near-duplicate
+        mesh.faces.push([0, 1, 2]);
+        mesh.faces.push([0, 3, 2]); // Uses near-duplicate
+
+        let params = RepairParams {
+            weld_epsilon: 0.001, // Will merge vertex 3 into vertex 1
+            fix_winding: false, // Keep it simple
+            fill_holes: false,
+            ..Default::default()
+        };
+
+        let result = super::repair_mesh_with_config(&mut mesh, &params);
+        assert!(result.is_ok());
+
+        // Vertices should have been welded
+        // Face indices should be valid
+        for face in &mesh.faces {
+            assert!((face[0] as usize) < mesh.vertices.len());
+            assert!((face[1] as usize) < mesh.vertices.len());
+            assert!((face[2] as usize) < mesh.vertices.len());
+        }
     }
 }
