@@ -9,7 +9,7 @@ keywords = ["mesh", "3d", "shell", "offset", "sdf"]
 categories = ["graphics", "algorithms"]
 
 [dependencies]
-mesh-repair = { path = "../mesh-repair" }
+mesh-repair = { version = "0.1", path = "../mesh-repair" }
 nalgebra.workspace = true
 hashbrown.workspace = true
 thiserror.workspace = true
