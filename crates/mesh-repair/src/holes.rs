@@ -2,6 +2,7 @@
 
 use hashbrown::{HashMap, HashSet};
 use nalgebra::{Point3, Vector3};
+use rayon::prelude::*;
 use tracing::{debug, info, warn};
 
 use crate::adjacency::MeshAdjacency;
@@ -310,24 +311,40 @@ pub fn fill_holes(mesh: &mut Mesh) -> MeshResult<usize> {
 /// Fill all holes in the mesh that are below the maximum edge count.
 ///
 /// Returns the number of holes filled.
+///
+/// Uses parallel processing via rayon - each hole is filled independently,
+/// then all triangles are merged into the mesh.
 pub fn fill_holes_with_max_edges(mesh: &mut Mesh, max_hole_edges: usize) -> MeshResult<usize> {
     let adjacency = MeshAdjacency::build(&mesh.faces);
     let holes = detect_holes(mesh, &adjacency);
 
-    let mut filled_count = 0;
+    // Partition holes into fillable and too-large
+    let (fillable, skipped): (Vec<_>, Vec<_>) = holes
+        .into_iter()
+        .partition(|hole| hole.edge_count() <= max_hole_edges);
 
-    for hole in &holes {
-        if hole.edge_count() <= max_hole_edges {
-            let new_triangles = fill_hole_ear_clipping(mesh, hole);
-            mesh.faces.extend(new_triangles);
-            filled_count += 1;
-        } else {
-            warn!(
-                "Skipping large hole with {} edges (max: {})",
-                hole.edge_count(),
-                max_hole_edges
-            );
-        }
+    // Log skipped holes
+    for hole in &skipped {
+        warn!(
+            "Skipping large hole with {} edges (max: {})",
+            hole.edge_count(),
+            max_hole_edges
+        );
+    }
+
+    // Fill holes in parallel - each hole is independent
+    // The fill_hole_ear_clipping function only reads from mesh.vertices (immutable)
+    // and produces new triangles without modifying the mesh
+    let all_new_triangles: Vec<Vec<[u32; 3]>> = fillable
+        .par_iter()
+        .map(|hole| fill_hole_ear_clipping(mesh, hole))
+        .collect();
+
+    let filled_count = all_new_triangles.len();
+
+    // Merge all new triangles into the mesh (sequential, but fast)
+    for triangles in all_new_triangles {
+        mesh.faces.extend(triangles);
     }
 
     if filled_count > 0 {

@@ -10,6 +10,7 @@
 
 use hashbrown::{HashMap, HashSet};
 use nalgebra::{Matrix3, Point3, Vector3};
+use rayon::prelude::*;
 
 use crate::{Mesh, MeshAdjacency, Vertex};
 
@@ -985,6 +986,8 @@ fn is_valid_flip(mesh: &Mesh, v0: u32, v1: u32, opp0: u32, opp1: u32) -> bool {
 }
 
 /// Apply tangential smoothing to vertices.
+///
+/// Uses parallel iteration via rayon for improved performance on large meshes.
 fn smooth_vertices(
     mesh: &mut Mesh,
     adj: &MeshAdjacency,
@@ -995,42 +998,43 @@ fn smooth_vertices(
         return;
     }
 
-    // Compute new positions
-    let mut new_positions: Vec<Point3<f64>> = mesh
+    // Compute new positions in parallel
+    // Each vertex's new position depends only on reading neighbor positions (no writes)
+    let vertices_ref = &mesh.vertices;
+    let new_positions: Vec<Point3<f64>> = mesh
         .vertices
-        .iter()
-        .map(|v| v.position)
+        .par_iter()
+        .enumerate()
+        .map(|(vi, vertex)| {
+            let vi = vi as u32;
+
+            // Don't smooth boundary vertices - keep original position
+            if boundary_vertices.contains(&vi) {
+                return vertex.position;
+            }
+
+            // Find neighbors
+            let neighbors = get_vertex_neighbors(adj, vi);
+            if neighbors.is_empty() {
+                return vertex.position;
+            }
+
+            // Compute centroid of neighbors (Laplacian smoothing)
+            let mut centroid = Vector3::new(0.0, 0.0, 0.0);
+            for &ni in &neighbors {
+                let np = &vertices_ref[ni as usize].position;
+                centroid += Vector3::new(np.x, np.y, np.z);
+            }
+            centroid /= neighbors.len() as f64;
+
+            let current = Vector3::new(vertex.position.x, vertex.position.y, vertex.position.z);
+
+            // Move toward centroid by smoothing factor
+            let smoothed = current + (centroid - current) * factor;
+
+            Point3::new(smoothed.x, smoothed.y, smoothed.z)
+        })
         .collect();
-
-    for (vi, vertex) in mesh.vertices.iter().enumerate() {
-        let vi = vi as u32;
-
-        // Don't smooth boundary vertices
-        if boundary_vertices.contains(&vi) {
-            continue;
-        }
-
-        // Find neighbors
-        let neighbors = get_vertex_neighbors(adj, vi);
-        if neighbors.is_empty() {
-            continue;
-        }
-
-        // Compute centroid of neighbors (Laplacian smoothing)
-        let mut centroid = Vector3::new(0.0, 0.0, 0.0);
-        for &ni in &neighbors {
-            let np = &mesh.vertices[ni as usize].position;
-            centroid += Vector3::new(np.x, np.y, np.z);
-        }
-        centroid /= neighbors.len() as f64;
-
-        let current = Vector3::new(vertex.position.x, vertex.position.y, vertex.position.z);
-
-        // Move toward centroid by smoothing factor
-        let smoothed = current + (centroid - current) * factor;
-
-        new_positions[vi as usize] = Point3::new(smoothed.x, smoothed.y, smoothed.z);
-    }
 
     // Apply new positions
     for (vi, pos) in new_positions.into_iter().enumerate() {
@@ -2368,6 +2372,213 @@ fn flip_edges_for_anisotropy(
     }
 
     (Mesh { vertices: mesh.vertices.clone(), faces }, flip_count)
+}
+
+/// Perform isotropic remeshing with progress reporting.
+///
+/// This is a progress-reporting variant of [`remesh_isotropic`] that allows tracking
+/// the remeshing progress and supports cancellation via the progress callback.
+///
+/// # Arguments
+/// * `mesh` - The input mesh to remesh
+/// * `params` - Remeshing parameters
+/// * `callback` - Optional progress callback. Returns `false` to request cancellation.
+///
+/// # Returns
+/// A `RemeshResult` containing the remeshed mesh and statistics.
+/// If cancelled via callback, returns the partially remeshed mesh.
+///
+/// # Example
+/// ```ignore
+/// use mesh_repair::{Mesh, remesh_isotropic_with_progress, RemeshParams};
+/// use mesh_repair::progress::ProgressCallback;
+///
+/// let callback: ProgressCallback = Box::new(|progress| {
+///     println!("Iteration {}/{}: {}", progress.current, progress.total, progress.message);
+///     true // Continue
+/// });
+///
+/// let result = remesh_isotropic_with_progress(&mesh, &RemeshParams::default(), Some(&callback));
+/// ```
+pub fn remesh_isotropic_with_progress(
+    mesh: &Mesh,
+    params: &RemeshParams,
+    callback: Option<&crate::progress::ProgressCallback>,
+) -> RemeshResult {
+    use crate::progress::ProgressTracker;
+
+    let original_triangles = mesh.faces.len();
+    let original_vertices = mesh.vertices.len();
+
+    // Dispatch to appropriate remeshing algorithm based on params
+    if params.adaptive_to_curvature {
+        return remesh_adaptive(mesh, params);
+    }
+    if params.anisotropic {
+        return remesh_anisotropic(mesh, params);
+    }
+
+    if original_triangles == 0 || params.iterations == 0 {
+        return RemeshResult {
+            mesh: mesh.clone(),
+            original_triangles,
+            final_triangles: original_triangles,
+            original_vertices,
+            final_vertices: original_vertices,
+            iterations_performed: 0,
+            target_edge_length: 0.0,
+            edges_split: 0,
+            edges_collapsed: 0,
+            edges_flipped: 0,
+            feature_edges_detected: 0,
+            adaptive_enabled: false,
+            anisotropic_enabled: false,
+        };
+    }
+
+    // Determine target edge length
+    let target = params
+        .target_edge_length
+        .unwrap_or_else(|| compute_average_edge_length(mesh));
+
+    let min_length = target * params.min_edge_ratio;
+    let max_length = target * params.max_edge_ratio;
+
+    let mut current_mesh = mesh.clone();
+    let mut total_splits = 0;
+    let mut total_collapses = 0;
+    let mut total_flips = 0;
+
+    // Create progress tracker for iterations
+    let tracker = ProgressTracker::new(params.iterations as u64);
+
+    for iter in 0..params.iterations {
+        // Check for cancellation
+        if tracker.is_cancelled() {
+            break;
+        }
+
+        // Report progress at start of iteration
+        tracker.set(iter as u64);
+        if !tracker.maybe_callback(
+            callback,
+            format!(
+                "Remeshing iteration {}/{}: {} vertices, {} faces",
+                iter + 1,
+                params.iterations,
+                current_mesh.vertices.len(),
+                current_mesh.faces.len()
+            ),
+        ) {
+            break; // Cancelled
+        }
+
+        // Build adjacency for this iteration
+        let adj = MeshAdjacency::build(&current_mesh.faces);
+
+        // Identify protected edges
+        let boundary_edges: HashSet<(u32, u32)> = if params.preserve_boundary {
+            adj.boundary_edges().collect()
+        } else {
+            HashSet::new()
+        };
+
+        let sharp_edges: HashSet<(u32, u32)> = if params.preserve_sharp_edges {
+            find_sharp_edges(&current_mesh, &adj, params.sharp_angle_threshold)
+        } else {
+            HashSet::new()
+        };
+
+        let _boundary_vertices: HashSet<u32> = boundary_edges
+            .iter()
+            .flat_map(|&(a, b)| [a, b])
+            .collect();
+
+        // Step 1: Split long edges
+        let (new_mesh, splits) =
+            split_long_edges(&current_mesh, &adj, max_length, &boundary_edges, &sharp_edges);
+        current_mesh = new_mesh;
+        total_splits += splits;
+
+        // Rebuild adjacency after splits
+        let adj = MeshAdjacency::build(&current_mesh.faces);
+        let boundary_edges: HashSet<(u32, u32)> = if params.preserve_boundary {
+            adj.boundary_edges().collect()
+        } else {
+            HashSet::new()
+        };
+        let boundary_vertices: HashSet<u32> = boundary_edges
+            .iter()
+            .flat_map(|&(a, b)| [a, b])
+            .collect();
+
+        // Step 2: Collapse short edges
+        let (new_mesh, collapses) = collapse_short_edges(
+            &current_mesh,
+            &adj,
+            min_length,
+            &boundary_edges,
+            &sharp_edges,
+            &boundary_vertices,
+        );
+        current_mesh = new_mesh;
+        total_collapses += collapses;
+
+        // Rebuild adjacency after collapses
+        let adj = MeshAdjacency::build(&current_mesh.faces);
+
+        // Step 3: Flip edges to improve valence
+        let (new_mesh, flips) = flip_edges_for_valence(&current_mesh, &adj, &boundary_edges, &sharp_edges);
+        current_mesh = new_mesh;
+        total_flips += flips;
+
+        // Rebuild adjacency after flips
+        let adj = MeshAdjacency::build(&current_mesh.faces);
+        let boundary_vertices: HashSet<u32> = if params.preserve_boundary {
+            adj.boundary_edges().flat_map(|(a, b)| [a, b]).collect()
+        } else {
+            HashSet::new()
+        };
+
+        // Step 4: Tangential smoothing
+        smooth_vertices(
+            &mut current_mesh,
+            &adj,
+            params.smoothing_factor,
+            &boundary_vertices,
+        );
+    }
+
+    // Final progress update
+    tracker.set(params.iterations as u64);
+    let _ = tracker.maybe_callback(callback, "Remeshing complete".to_string());
+
+    // Clean up any unreferenced vertices
+    current_mesh = remove_unreferenced_vertices_internal(&current_mesh);
+
+    // Count feature edges if preserving them
+    let feature_edge_count = if params.preserve_sharp_edges {
+        let adj = MeshAdjacency::build(&current_mesh.faces);
+        find_sharp_edges(&current_mesh, &adj, params.sharp_angle_threshold).len()
+    } else {
+        0
+    };
+
+    RemeshResult {
+        final_triangles: current_mesh.faces.len(),
+        final_vertices: current_mesh.vertices.len(),
+        mesh: current_mesh,
+        original_triangles,
+        original_vertices,
+        iterations_performed: params.iterations,
+        target_edge_length: target,
+        edges_split: total_splits,
+        edges_collapsed: total_collapses,
+        edges_flipped: total_flips,
+        feature_edges_detected: feature_edge_count,
+        adaptive_enabled: false,
+        anisotropic_enabled: false,
+    }
 }
 
 #[cfg(test)]

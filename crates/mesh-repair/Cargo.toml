@@ -18,6 +18,26 @@ ply-rs.workspace = true
 hashbrown.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+kiddo.workspace = true
+fast-surface-nets.workspace = true
+rayon.workspace = true
+
+# STEP/CAD export (optional)
+truck-topology = { workspace = true, optional = true }
+truck-geometry = { workspace = true, optional = true }
+truck-modeling = { workspace = true, optional = true }
+truck-stepio = { workspace = true, optional = true }
+
+# UUID generation (optional, for 3MF production extension)
+uuid = { workspace = true, optional = true }
+
+[features]
+default = []
+step = ["truck-topology", "truck-geometry", "truck-modeling", "truck-stepio"]
+# 3MF Production Extension - adds UUID support for multi-part assemblies
+3mf-production = ["uuid"]
+# Full 3MF support (all extensions)
+3mf-full = ["3mf-production"]
 
 [dev-dependencies]
 tempfile.workspace = true

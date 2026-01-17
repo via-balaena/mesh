@@ -276,7 +276,9 @@ pub mod lattice;
 pub mod measure;
 pub mod morph;
 pub mod multiscan;
+pub mod pointcloud;
 pub mod printability;
+pub mod progress;
 pub mod region;
 pub mod registration;
 pub mod remesh;
@@ -288,6 +290,14 @@ pub mod template;
 pub mod thickness;
 pub mod validate;
 pub mod winding;
+
+// STEP export (feature-gated)
+#[cfg(feature = "step")]
+pub mod step;
+
+// Re-export STEP types when feature is enabled
+#[cfg(feature = "step")]
+pub use step::{export_step, export_step_to_string, StepExportParams, StepExportResult};
 
 // Re-export core types at crate root
 pub use error::{MeshError, MeshResult, ValidationIssue};
@@ -301,6 +311,12 @@ pub use io::{
     load_mesh, save_mesh, save_stl, save_obj, save_3mf, save_ply, save_ply_ascii, MeshFormat,
     // 3MF with materials support
     save_3mf_with_materials, load_3mf_with_materials, ThreeMfExportParams, ThreeMfLoadResult,
+    // 3MF extended export with all extensions
+    save_3mf_extended,
+    // 3MF Beam Lattice Extension types
+    Beam, BeamCap, BeamLatticeData, BeamSet,
+    // 3MF Color Group types
+    ColorGroup, TriangleColors,
 };
 pub use repair::{
     compute_vertex_normals, fix_inverted_faces, remove_duplicate_faces, fix_non_manifold_edges,
@@ -321,11 +337,12 @@ pub use components::{
 pub use intersect::{
     detect_self_intersections, IntersectionParams, SelfIntersectionResult,
 };
-pub use decimate::{decimate_mesh, DecimateParams, DecimateResult};
+pub use decimate::{decimate_mesh, decimate_mesh_with_progress, DecimateParams, DecimateResult};
 pub use subdivide::{subdivide_mesh, SubdivideParams, SubdivideResult};
 pub use remesh::{
     compute_curvature, detect_feature_edges, remesh_adaptive, remesh_anisotropic, remesh_isotropic,
-    CurvatureResult, FeatureEdge, FeatureEdgeResult, RemeshParams, RemeshResult, VertexCurvature,
+    remesh_isotropic_with_progress, CurvatureResult, FeatureEdge, FeatureEdgeResult, RemeshParams,
+    RemeshResult, VertexCurvature,
 };
 pub use thickness::{analyze_thickness, ThicknessParams, ThicknessResult, ThinRegion};
 
@@ -341,7 +358,10 @@ pub use template::{
 };
 
 // Re-export region types for variable thickness and material zones
-pub use region::{MaterialProperties, MaterialZone, MeshRegion, RegionMap, RegionSelector, ThicknessMap};
+pub use region::{
+    FloodFillCriteria, MaterialProperties, MaterialZone, MeshRegion, RegionMap, RegionSelector,
+    ThicknessMap,
+};
 
 // Re-export assembly types for multi-part management
 pub use assembly::{
@@ -357,7 +377,8 @@ pub use lattice::{
 
 // Re-export boolean types for CSG operations
 pub use boolean::{
-    boolean_operation, BooleanOp, BooleanParams, BooleanResult, BooleanStats, CoplanarStrategy,
+    boolean_operation, boolean_operation_with_progress, BooleanOp, BooleanParams, BooleanResult,
+    BooleanStats, CoplanarStrategy,
 };
 
 // Re-export scan processing types
@@ -393,6 +414,18 @@ pub use slice::{
     slice_preview, validate_for_fdm, validate_for_sla, Contour, FdmParams, FdmValidationResult,
     GapIssue, Layer, LayerBounds, LayerStats, SlaParams, SlaValidationResult, SliceParams,
     SliceResult, SmallFeatureIssue, SvgExportParams, ThinWallIssue,
+};
+
+// Re-export point cloud types for scanner data processing
+pub use pointcloud::{
+    CloudPoint, PointCloud, PointCloudFormat, ReconstructionAlgorithm, ReconstructionParams,
+    ReconstructionResult,
+};
+
+// Re-export progress tracking types for long-running operations
+pub use progress::{
+    estimate_operation_time, OperationEstimate, OperationType, Progress, ProgressCallback,
+    ProgressReporter, ProgressTracker, SharedProgressTracker,
 };
 
 // Convenience methods on Mesh
@@ -940,5 +973,57 @@ impl Mesh {
     /// ```
     pub fn create_thickness_map(&self, default_thickness: f64) -> region::ThicknessMap {
         region::ThicknessMap::new(default_thickness)
+    }
+
+    /// Export the mesh to STEP format for CAD interchange.
+    ///
+    /// STEP (ISO 10303) is a widely-supported format for exchanging geometry
+    /// with CAD systems. Triangle meshes are exported as faceted B-rep geometry.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "step")]
+    /// # fn main() -> mesh_repair::MeshResult<()> {
+    /// use mesh_repair::Mesh;
+    ///
+    /// let mesh = Mesh::load("model.stl")?;
+    /// mesh.save_step("model.step")?;
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "step"))]
+    /// # fn main() {}
+    /// ```
+    #[cfg(feature = "step")]
+    pub fn save_step(&self, path: impl AsRef<std::path::Path>) -> MeshResult<step::StepExportResult> {
+        step::export_step(self, path, &step::StepExportParams::default())
+    }
+
+    /// Export the mesh to STEP format with custom parameters.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "step")]
+    /// # fn main() -> mesh_repair::MeshResult<()> {
+    /// use mesh_repair::{Mesh, StepExportParams};
+    ///
+    /// let mesh = Mesh::load("model.stl")?;
+    /// let params = StepExportParams::default()
+    ///     .with_description("My CAD model")
+    ///     .with_author("Jane Doe", "ACME Corp");
+    /// mesh.save_step_with_params("model.step", &params)?;
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "step"))]
+    /// # fn main() {}
+    /// ```
+    #[cfg(feature = "step")]
+    pub fn save_step_with_params(
+        &self,
+        path: impl AsRef<std::path::Path>,
+        params: &step::StepExportParams,
+    ) -> MeshResult<step::StepExportResult> {
+        step::export_step(self, path, params)
     }
 }

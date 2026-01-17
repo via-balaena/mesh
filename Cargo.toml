@@ -47,3 +47,12 @@ kiddo = "4"
 # Testing
 tempfile = "3"
 approx = "0.5"
+
+# STEP/CAD export (truck ecosystem)
+truck-topology = "0.5"
+truck-geometry = "0.5"
+truck-modeling = "0.6"
+truck-stepio = "0.3"
+
+# UUID generation (for 3MF production extension)
+uuid = { version = "1", features = ["v4"] }

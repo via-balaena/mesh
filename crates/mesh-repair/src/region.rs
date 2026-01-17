@@ -85,6 +85,98 @@ impl MeshRegion {
         }
     }
 
+    /// Create a region by flood-filling from a seed face.
+    ///
+    /// This is the primary method for "painting" regions on a mesh. Starting from
+    /// a seed face, it expands to adjacent faces that meet the specified criteria.
+    ///
+    /// # Arguments
+    /// * `mesh` - The mesh to select from
+    /// * `name` - Name for the region
+    /// * `seed_face` - Index of the face to start from
+    /// * `criteria` - Criteria for expanding the selection
+    ///
+    /// # Example
+    /// ```
+    /// use mesh_repair::{Mesh, Vertex};
+    /// use mesh_repair::region::{MeshRegion, FloodFillCriteria};
+    ///
+    /// let mut mesh = Mesh::new();
+    /// // ... add vertices and faces ...
+    /// # mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 0.0));
+    /// # mesh.vertices.push(Vertex::from_coords(1.0, 0.0, 0.0));
+    /// # mesh.vertices.push(Vertex::from_coords(0.5, 1.0, 0.0));
+    /// # mesh.faces.push([0, 1, 2]);
+    ///
+    /// // Paint a region starting from face 0, stopping at sharp edges
+    /// let region = MeshRegion::paint(&mesh, "heel_cup", 0, FloodFillCriteria::default());
+    /// ```
+    pub fn paint(
+        mesh: &Mesh,
+        name: impl Into<String>,
+        seed_face: u32,
+        criteria: FloodFillCriteria,
+    ) -> Self {
+        let selector = RegionSelector::flood_fill(seed_face, criteria);
+        let faces = selector.select_faces(mesh);
+
+        // Also get vertices from the selected faces
+        let mut vertices = HashSet::new();
+        for &fi in &faces {
+            if let Some(face) = mesh.faces.get(fi as usize) {
+                vertices.insert(face[0]);
+                vertices.insert(face[1]);
+                vertices.insert(face[2]);
+            }
+        }
+
+        Self {
+            name: name.into(),
+            vertices,
+            faces,
+            metadata: HashMap::new(),
+            color: None,
+        }
+    }
+
+    /// Create a region by flood-filling from multiple seed faces.
+    pub fn paint_multi(
+        mesh: &Mesh,
+        name: impl Into<String>,
+        seed_faces: impl IntoIterator<Item = u32>,
+        criteria: FloodFillCriteria,
+    ) -> Self {
+        let selector = RegionSelector::flood_fill_multi(seed_faces, criteria);
+        let faces = selector.select_faces(mesh);
+
+        let mut vertices = HashSet::new();
+        for &fi in &faces {
+            if let Some(face) = mesh.faces.get(fi as usize) {
+                vertices.insert(face[0]);
+                vertices.insert(face[1]);
+                vertices.insert(face[2]);
+            }
+        }
+
+        Self {
+            name: name.into(),
+            vertices,
+            faces,
+            metadata: HashMap::new(),
+            color: None,
+        }
+    }
+
+    /// Create a region by flood-filling with default criteria (30 degree angle threshold).
+    pub fn paint_default(mesh: &Mesh, name: impl Into<String>, seed_face: u32) -> Self {
+        Self::paint(mesh, name, seed_face, FloodFillCriteria::default())
+    }
+
+    /// Create a region by flood-filling smooth areas (15 degree angle threshold).
+    pub fn paint_smooth(mesh: &Mesh, name: impl Into<String>, seed_face: u32) -> Self {
+        Self::paint(mesh, name, seed_face, FloodFillCriteria::smooth_regions())
+    }
+
     /// Create a region from vertex indices.
     pub fn from_vertices(name: impl Into<String>, vertices: impl IntoIterator<Item = u32>) -> Self {
         Self {
@@ -388,6 +480,105 @@ pub enum RegionSelector {
 
     /// Negate a selector.
     Not(Box<RegionSelector>),
+
+    /// Flood-fill from seed faces, expanding based on criteria.
+    FloodFill {
+        /// Seed face indices to start the flood-fill from.
+        seeds: HashSet<u32>,
+        /// Stopping criteria for the flood-fill.
+        criteria: FloodFillCriteria,
+    },
+}
+
+/// Criteria for stopping flood-fill expansion.
+#[derive(Debug, Clone)]
+pub struct FloodFillCriteria {
+    /// Maximum angle (in radians) between adjacent face normals.
+    /// Flood-fill stops at edges where the dihedral angle exceeds this.
+    /// Default: π/6 (30 degrees).
+    pub max_angle: f64,
+
+    /// Maximum distance from the seed faces' centroid.
+    /// None means no distance limit.
+    pub max_distance: Option<f64>,
+
+    /// Maximum number of faces to include.
+    /// None means no limit.
+    pub max_faces: Option<usize>,
+
+    /// Maximum curvature change allowed.
+    /// Higher values allow expansion over sharper transitions.
+    /// None means no curvature limit.
+    pub max_curvature: Option<f64>,
+
+    /// Whether to stop at boundary edges (edges with only one adjacent face).
+    /// Default: true.
+    pub stop_at_boundary: bool,
+}
+
+impl Default for FloodFillCriteria {
+    fn default() -> Self {
+        Self {
+            max_angle: std::f64::consts::PI / 6.0, // 30 degrees
+            max_distance: None,
+            max_faces: None,
+            max_curvature: None,
+            stop_at_boundary: true,
+        }
+    }
+}
+
+impl FloodFillCriteria {
+    /// Create criteria that stops at sharp edges (angle threshold).
+    pub fn angle_threshold(radians: f64) -> Self {
+        Self {
+            max_angle: radians,
+            ..Default::default()
+        }
+    }
+
+    /// Create criteria with a distance limit from seed.
+    pub fn with_max_distance(mut self, distance: f64) -> Self {
+        self.max_distance = Some(distance);
+        self
+    }
+
+    /// Create criteria with a face count limit.
+    pub fn with_max_faces(mut self, count: usize) -> Self {
+        self.max_faces = Some(count);
+        self
+    }
+
+    /// Create criteria with curvature limit.
+    pub fn with_max_curvature(mut self, curvature: f64) -> Self {
+        self.max_curvature = Some(curvature);
+        self
+    }
+
+    /// Set whether to stop at mesh boundaries.
+    pub fn stop_at_boundary(mut self, stop: bool) -> Self {
+        self.stop_at_boundary = stop;
+        self
+    }
+
+    /// Create very permissive criteria (expand everywhere possible).
+    pub fn permissive() -> Self {
+        Self {
+            max_angle: std::f64::consts::PI, // 180 degrees - basically no angle limit
+            max_distance: None,
+            max_faces: None,
+            max_curvature: None,
+            stop_at_boundary: false,
+        }
+    }
+
+    /// Create criteria for selecting smooth regions (strict angle threshold).
+    pub fn smooth_regions() -> Self {
+        Self {
+            max_angle: std::f64::consts::PI / 12.0, // 15 degrees
+            ..Default::default()
+        }
+    }
 }
 
 impl RegionSelector {
@@ -465,6 +656,34 @@ impl RegionSelector {
     /// Negate this selector.
     pub fn not(self) -> Self {
         RegionSelector::Not(Box::new(self))
+    }
+
+    /// Create a flood-fill selector starting from a single seed face.
+    pub fn flood_fill(seed_face: u32, criteria: FloodFillCriteria) -> Self {
+        let mut seeds = HashSet::new();
+        seeds.insert(seed_face);
+        RegionSelector::FloodFill { seeds, criteria }
+    }
+
+    /// Create a flood-fill selector starting from multiple seed faces.
+    pub fn flood_fill_multi(seed_faces: impl IntoIterator<Item = u32>, criteria: FloodFillCriteria) -> Self {
+        RegionSelector::FloodFill {
+            seeds: seed_faces.into_iter().collect(),
+            criteria,
+        }
+    }
+
+    /// Create a flood-fill selector that expands from a seed face with default criteria.
+    pub fn paint(seed_face: u32) -> Self {
+        Self::flood_fill(seed_face, FloodFillCriteria::default())
+    }
+
+    /// Create a flood-fill selector that expands from a seed face, stopping at sharp edges.
+    pub fn paint_smooth(seed_face: u32, angle_threshold_degrees: f64) -> Self {
+        Self::flood_fill(
+            seed_face,
+            FloodFillCriteria::angle_threshold(angle_threshold_degrees.to_radians()),
+        )
     }
 
     /// Apply this selector to a mesh, returning (vertices, faces).
@@ -616,7 +835,230 @@ impl RegionSelector {
                     .filter(|i| !selected.contains(i))
                     .collect()
             }
+
+            RegionSelector::FloodFill { seeds, criteria } => {
+                // Flood-fill selects faces, then returns their vertices
+                let faces = flood_fill_faces(mesh, seeds, criteria);
+                let mut vertices = HashSet::new();
+                for &fi in &faces {
+                    if let Some(face) = mesh.faces.get(fi as usize) {
+                        vertices.insert(face[0]);
+                        vertices.insert(face[1]);
+                        vertices.insert(face[2]);
+                    }
+                }
+                vertices
+            }
         }
+    }
+
+    /// Select faces using this selector (for flood-fill, this is the primary method).
+    pub fn select_faces(&self, mesh: &Mesh) -> HashSet<u32> {
+        match self {
+            RegionSelector::FloodFill { seeds, criteria } => {
+                flood_fill_faces(mesh, seeds, criteria)
+            }
+            _ => {
+                // For other selectors, select faces where all vertices are selected
+                let vertices = self.select_vertices(mesh);
+                mesh.faces
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, face)| {
+                        vertices.contains(&face[0])
+                            && vertices.contains(&face[1])
+                            && vertices.contains(&face[2])
+                    })
+                    .map(|(i, _)| i as u32)
+                    .collect()
+            }
+        }
+    }
+}
+
+/// Perform flood-fill on mesh faces starting from seed faces.
+fn flood_fill_faces(
+    mesh: &Mesh,
+    seeds: &HashSet<u32>,
+    criteria: &FloodFillCriteria,
+) -> HashSet<u32> {
+    use std::collections::VecDeque;
+
+    if seeds.is_empty() || mesh.faces.is_empty() {
+        return HashSet::new();
+    }
+
+    // Build edge-to-face adjacency
+    let edge_to_faces = build_edge_to_faces(&mesh.faces);
+
+    // Precompute face normals and centroids
+    let face_normals: Vec<Option<Vector3<f64>>> = mesh
+        .faces
+        .iter()
+        .map(|face| {
+            let v0 = mesh.vertices.get(face[0] as usize)?.position;
+            let v1 = mesh.vertices.get(face[1] as usize)?.position;
+            let v2 = mesh.vertices.get(face[2] as usize)?.position;
+            let e1 = v1 - v0;
+            let e2 = v2 - v0;
+            let normal = e1.cross(&e2);
+            let len = normal.norm();
+            if len > 1e-10 {
+                Some(normal / len)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let face_centroids: Vec<Option<Point3<f64>>> = mesh
+        .faces
+        .iter()
+        .map(|face| {
+            let v0 = mesh.vertices.get(face[0] as usize)?.position;
+            let v1 = mesh.vertices.get(face[1] as usize)?.position;
+            let v2 = mesh.vertices.get(face[2] as usize)?.position;
+            Some(Point3::from((v0.coords + v1.coords + v2.coords) / 3.0))
+        })
+        .collect();
+
+    // Compute seed centroid for distance limit
+    let seed_centroid: Option<Point3<f64>> = if criteria.max_distance.is_some() {
+        let mut sum = Vector3::zeros();
+        let mut count = 0;
+        for &seed in seeds {
+            if let Some(Some(centroid)) = face_centroids.get(seed as usize) {
+                sum += centroid.coords;
+                count += 1;
+            }
+        }
+        if count > 0 {
+            Some(Point3::from(sum / count as f64))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // Initialize flood-fill
+    let mut selected: HashSet<u32> = HashSet::new();
+    let mut queue: VecDeque<u32> = VecDeque::new();
+
+    // Add seeds to the queue
+    for &seed in seeds {
+        if (seed as usize) < mesh.faces.len() {
+            selected.insert(seed);
+            queue.push_back(seed);
+        }
+    }
+
+    // Flood-fill BFS
+    while let Some(current_face) = queue.pop_front() {
+        // Check face limit
+        if let Some(max_faces) = criteria.max_faces {
+            if selected.len() >= max_faces {
+                break;
+            }
+        }
+
+        let current_normal = match face_normals.get(current_face as usize) {
+            Some(Some(n)) => *n,
+            _ => continue,
+        };
+
+        // Get edges of current face
+        let face = &mesh.faces[current_face as usize];
+        let edges = [
+            normalize_edge(face[0], face[1]),
+            normalize_edge(face[1], face[2]),
+            normalize_edge(face[2], face[0]),
+        ];
+
+        // Check each adjacent face
+        for edge in &edges {
+            let adjacent_faces = match edge_to_faces.get(edge) {
+                Some(faces) => faces,
+                None => continue,
+            };
+
+            // Check if this is a boundary edge
+            if criteria.stop_at_boundary && adjacent_faces.len() == 1 {
+                continue;
+            }
+
+            for &neighbor in adjacent_faces {
+                if neighbor == current_face || selected.contains(&neighbor) {
+                    continue;
+                }
+
+                // Check face limit before adding
+                if let Some(max_faces) = criteria.max_faces {
+                    if selected.len() >= max_faces {
+                        break;
+                    }
+                }
+
+                // Get neighbor normal
+                let neighbor_normal = match face_normals.get(neighbor as usize) {
+                    Some(Some(n)) => *n,
+                    _ => continue,
+                };
+
+                // Check angle criterion
+                let dot = current_normal.dot(&neighbor_normal).clamp(-1.0, 1.0);
+                let angle = dot.acos();
+                if angle > criteria.max_angle {
+                    continue;
+                }
+
+                // Check distance criterion
+                if let (Some(max_dist), Some(seed_center)) = (criteria.max_distance, seed_centroid) {
+                    if let Some(Some(neighbor_centroid)) = face_centroids.get(neighbor as usize) {
+                        let dist = (neighbor_centroid - seed_center).norm();
+                        if dist > max_dist {
+                            continue;
+                        }
+                    }
+                }
+
+                // All criteria passed, add to selection
+                selected.insert(neighbor);
+                queue.push_back(neighbor);
+            }
+        }
+    }
+
+    selected
+}
+
+/// Build a map from edges to the faces that contain them.
+fn build_edge_to_faces(faces: &[[u32; 3]]) -> HashMap<(u32, u32), Vec<u32>> {
+    let mut edge_to_faces: HashMap<(u32, u32), Vec<u32>> = HashMap::new();
+
+    for (face_idx, face) in faces.iter().enumerate() {
+        let edges = [
+            normalize_edge(face[0], face[1]),
+            normalize_edge(face[1], face[2]),
+            normalize_edge(face[2], face[0]),
+        ];
+        for edge in edges {
+            edge_to_faces
+                .entry(edge)
+                .or_default()
+                .push(face_idx as u32);
+        }
+    }
+
+    edge_to_faces
+}
+
+/// Normalize an edge so the smaller vertex index comes first.
+fn normalize_edge(v0: u32, v1: u32) -> (u32, u32) {
+    if v0 < v1 {
+        (v0, v1)
+    } else {
+        (v1, v0)
     }
 }
 
@@ -1131,5 +1573,222 @@ mod tests {
         let (vertices, _) = selector.select(&mesh);
         // All vertices of the cube are within 10mm of the central axis
         assert!(!vertices.is_empty());
+    }
+
+    // ===== Flood-fill / Region Painting Tests =====
+
+    #[test]
+    fn test_flood_fill_single_face() {
+        let mesh = create_test_cube();
+
+        // Start from face 0, with very permissive criteria
+        let selector = RegionSelector::flood_fill(0, FloodFillCriteria::permissive());
+        let faces = selector.select_faces(&mesh);
+
+        // With permissive criteria, should expand to all connected faces
+        // Cube has 12 faces, all connected
+        assert_eq!(faces.len(), 12);
+    }
+
+    #[test]
+    fn test_flood_fill_angle_limited() {
+        let mesh = create_test_cube();
+
+        // Start from face 0 (on bottom), with strict angle limit
+        // Adjacent faces on same plane should be selected, but faces on other planes shouldn't
+        let selector = RegionSelector::flood_fill(
+            0,
+            FloodFillCriteria::angle_threshold(std::f64::consts::PI / 18.0), // 10 degrees
+        );
+        let faces = selector.select_faces(&mesh);
+
+        // On a cube, faces 0 and 1 are on the bottom (z=0), coplanar
+        // Should only get the 2 bottom faces
+        assert!(faces.len() <= 2);
+        assert!(faces.contains(&0));
+    }
+
+    #[test]
+    fn test_flood_fill_max_faces() {
+        let mesh = create_test_cube();
+
+        // Limit to 3 faces
+        let criteria = FloodFillCriteria::permissive().with_max_faces(3);
+        let selector = RegionSelector::flood_fill(0, criteria);
+        let faces = selector.select_faces(&mesh);
+
+        assert!(faces.len() <= 3);
+        assert!(faces.contains(&0)); // Seed face is always included
+    }
+
+    #[test]
+    fn test_flood_fill_distance_limited() {
+        let mesh = create_test_cube();
+
+        // Limit distance from seed - should only get nearby faces
+        let criteria = FloodFillCriteria::permissive().with_max_distance(5.0);
+        let selector = RegionSelector::flood_fill(0, criteria);
+        let faces = selector.select_faces(&mesh);
+
+        // Should get some faces but not all (distance limit)
+        assert!(faces.contains(&0));
+        // Faces far from the seed centroid should be excluded
+    }
+
+    #[test]
+    fn test_flood_fill_empty_seeds() {
+        let mesh = create_test_cube();
+
+        // Empty seeds should return empty result
+        let selector = RegionSelector::FloodFill {
+            seeds: HashSet::new(),
+            criteria: FloodFillCriteria::default(),
+        };
+        let faces = selector.select_faces(&mesh);
+
+        assert!(faces.is_empty());
+    }
+
+    #[test]
+    fn test_flood_fill_invalid_seed() {
+        let mesh = create_test_cube();
+
+        // Invalid seed face index
+        let selector = RegionSelector::flood_fill(999, FloodFillCriteria::default());
+        let faces = selector.select_faces(&mesh);
+
+        // Invalid seed is ignored
+        assert!(faces.is_empty());
+    }
+
+    #[test]
+    fn test_mesh_region_paint() {
+        let mesh = create_test_cube();
+
+        // Use the MeshRegion::paint convenience method
+        let region = MeshRegion::paint_default(&mesh, "bottom", 0);
+
+        assert_eq!(region.name, "bottom");
+        assert!(!region.faces.is_empty());
+        assert!(region.faces.contains(&0));
+        // Vertices should be populated from selected faces
+        assert!(!region.vertices.is_empty());
+    }
+
+    #[test]
+    fn test_mesh_region_paint_smooth() {
+        let mesh = create_test_cube();
+
+        // Paint smooth surfaces (strict angle threshold)
+        let region = MeshRegion::paint_smooth(&mesh, "flat_surface", 0);
+
+        assert_eq!(region.name, "flat_surface");
+        assert!(!region.faces.is_empty());
+        // Should only get coplanar faces (bottom of cube)
+        assert!(region.face_count() <= 2);
+    }
+
+    #[test]
+    fn test_flood_fill_criteria_builders() {
+        // Test the criteria builder methods
+        let criteria = FloodFillCriteria::angle_threshold(0.5)
+            .with_max_distance(10.0)
+            .with_max_faces(50)
+            .stop_at_boundary(false);
+
+        assert!((criteria.max_angle - 0.5).abs() < 1e-10);
+        assert_eq!(criteria.max_distance, Some(10.0));
+        assert_eq!(criteria.max_faces, Some(50));
+        assert!(!criteria.stop_at_boundary);
+    }
+
+    #[test]
+    fn test_flood_fill_criteria_presets() {
+        let permissive = FloodFillCriteria::permissive();
+        assert!((permissive.max_angle - std::f64::consts::PI).abs() < 1e-10);
+        assert!(!permissive.stop_at_boundary);
+
+        let smooth = FloodFillCriteria::smooth_regions();
+        assert!((smooth.max_angle - std::f64::consts::PI / 12.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_region_selector_paint_convenience() {
+        let mesh = create_test_cube();
+
+        // Test the RegionSelector::paint convenience method
+        let selector = RegionSelector::paint(0);
+        let faces = selector.select_faces(&mesh);
+
+        assert!(!faces.is_empty());
+        assert!(faces.contains(&0));
+    }
+
+    #[test]
+    fn test_flood_fill_multi_seeds() {
+        let mesh = create_test_cube();
+
+        // Start from multiple seed faces
+        let region = MeshRegion::paint_multi(
+            &mesh,
+            "multi_seed",
+            vec![0, 2], // Bottom and top faces
+            FloodFillCriteria::permissive(),
+        );
+
+        // Should get all connected faces
+        assert_eq!(region.face_count(), 12);
+    }
+
+    fn create_step_mesh() -> Mesh {
+        // Create a simple step mesh (two planes at different heights connected by a vertical face)
+        // This creates a clear sharp edge between horizontal and vertical faces
+        let mut mesh = Mesh::new();
+
+        // Bottom plane vertices (z=0)
+        mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 0.0));  // 0
+        mesh.vertices.push(Vertex::from_coords(10.0, 0.0, 0.0)); // 1
+        mesh.vertices.push(Vertex::from_coords(10.0, 10.0, 0.0)); // 2
+        mesh.vertices.push(Vertex::from_coords(0.0, 10.0, 0.0)); // 3
+
+        // Top plane vertices (z=5)
+        mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 5.0));  // 4
+        mesh.vertices.push(Vertex::from_coords(10.0, 0.0, 5.0)); // 5
+        mesh.vertices.push(Vertex::from_coords(10.0, 10.0, 5.0)); // 6
+        mesh.vertices.push(Vertex::from_coords(0.0, 10.0, 5.0)); // 7
+
+        // Bottom plane (2 triangles) - faces 0, 1
+        mesh.faces.push([0, 1, 2]);
+        mesh.faces.push([0, 2, 3]);
+
+        // Top plane (2 triangles) - faces 2, 3
+        mesh.faces.push([4, 6, 5]);
+        mesh.faces.push([4, 7, 6]);
+
+        // Vertical wall connecting them (2 triangles) - faces 4, 5
+        mesh.faces.push([0, 4, 5]);
+        mesh.faces.push([0, 5, 1]);
+
+        mesh
+    }
+
+    #[test]
+    fn test_flood_fill_stops_at_sharp_edge() {
+        let mesh = create_step_mesh();
+
+        // Start from bottom plane (face 0), should not cross to vertical wall
+        let region = MeshRegion::paint(
+            &mesh,
+            "bottom_only",
+            0,
+            FloodFillCriteria::angle_threshold(std::f64::consts::PI / 4.0), // 45 degrees
+        );
+
+        // Should get the 2 bottom faces but not the vertical faces (90 degree edge)
+        assert!(region.face_count() <= 2);
+        assert!(region.faces.contains(&0));
+        assert!(region.faces.contains(&1));
+        assert!(!region.faces.contains(&4)); // Vertical wall face
+        assert!(!region.faces.contains(&5)); // Vertical wall face
     }
 }

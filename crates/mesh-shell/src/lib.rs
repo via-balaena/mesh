@@ -49,7 +49,7 @@ pub use offset::{
 
 // Shell generation (rename to avoid conflict with error::ShellResult)
 pub use shell::{
-    generate_shell, generate_shell_no_validation,
+    generate_shell, generate_shell_no_validation, generate_shell_with_progress,
     ShellParams, ShellResult as ShellGenerationResult, WallGenerationMethod,
 };
 

@@ -11,6 +11,8 @@
 //! with the mesh surface. This gives the local wall thickness at each point.
 
 use nalgebra::{Point3, Vector3};
+use rayon::prelude::*;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tracing::{info, warn};
 
 use crate::types::{Mesh, Triangle};
@@ -491,94 +493,115 @@ pub fn analyze_thickness(mesh: &Mesh, params: &ThicknessParams) -> ThicknessResu
     // Compute vertex normals if not present
     let normals = compute_or_get_normals(mesh);
 
-    // Analyze thickness at each vertex
-    let mut vertex_thickness = vec![f64::INFINITY; vertex_count];
-    let mut thin_regions = Vec::new();
-    let mut vertices_skipped = 0;
-    let mut vertices_with_hits = 0;
-    let mut truncated = false;
-
     let max_dist = if params.max_ray_distance > 0.0 {
         params.max_ray_distance
     } else {
         f64::MAX
     };
 
-    for (vertex_idx, vertex) in mesh.vertices.iter().enumerate() {
-        // Get vertex normal
-        let normal = match &normals {
-            VertexNormals::FromMesh(n) => n.get(vertex_idx).and_then(|v| *v),
-            VertexNormals::Computed(n) => n.get(vertex_idx).copied(),
-        };
+    // Shared atomics for early termination when max_regions is reached
+    let thin_count = AtomicUsize::new(0);
+    let truncated_flag = AtomicBool::new(false);
 
-        let normal = match normal {
-            Some(n) if n.norm() > params.epsilon => n.normalize(),
-            _ => {
-                if params.require_normals {
-                    vertices_skipped += 1;
-                    continue;
+    // Process vertices in parallel, returning per-vertex results
+    // Each result is (thickness, hit_face_option, is_thin_region)
+    let vertex_results: Vec<(f64, Option<usize>, bool)> = mesh
+        .vertices
+        .par_iter()
+        .enumerate()
+        .map(|(vertex_idx, vertex)| {
+            // Get vertex normal
+            let normal = match &normals {
+                VertexNormals::FromMesh(n) => n.get(vertex_idx).and_then(|v| *v),
+                VertexNormals::Computed(n) => n.get(vertex_idx).copied(),
+            };
+
+            let normal = match normal {
+                Some(n) if n.norm() > params.epsilon => n.normalize(),
+                _ => {
+                    if params.require_normals {
+                        return (f64::INFINITY, None, false);
+                    }
+                    // Try to compute normal from adjacent faces
+                    let adj_faces = &vertex_faces[vertex_idx];
+                    if adj_faces.is_empty() {
+                        return (f64::INFINITY, None, false);
+                    }
+                    let mut sum = Vector3::zeros();
+                    for &face_idx in adj_faces {
+                        if let Some(n) = triangles[face_idx].normal() {
+                            sum += n;
+                        }
+                    }
+                    if sum.norm() < params.epsilon {
+                        return (f64::INFINITY, None, false);
+                    }
+                    sum.normalize()
                 }
-                // Try to compute normal from adjacent faces
-                let adj_faces = &vertex_faces[vertex_idx];
-                if adj_faces.is_empty() {
-                    vertices_skipped += 1;
-                    continue;
-                }
-                let mut sum = Vector3::zeros();
-                for &face_idx in adj_faces {
-                    if let Some(n) = triangles[face_idx].normal() {
-                        sum += n;
+            };
+
+            // Cast ray inward (opposite to normal)
+            let ray_dir = -normal;
+            let ray_origin = vertex.position;
+
+            // Compute inverse direction for AABB tests
+            let dir_inv = Vector3::new(
+                if ray_dir.x.abs() > params.epsilon { 1.0 / ray_dir.x } else { f64::MAX },
+                if ray_dir.y.abs() > params.epsilon { 1.0 / ray_dir.y } else { f64::MAX },
+                if ray_dir.z.abs() > params.epsilon { 1.0 / ray_dir.z } else { f64::MAX },
+            );
+
+            // Skip faces adjacent to this vertex to avoid self-intersection
+            let skip_faces = &vertex_faces[vertex_idx];
+
+            // Trace ray
+            if let Some((t, face_idx)) = trace_ray(
+                &bvh,
+                &ray_origin,
+                &ray_dir,
+                &dir_inv,
+                &triangles,
+                max_dist,
+                params.epsilon,
+                skip_faces,
+            ) {
+                // Check if this is a thin region
+                let is_thin = t < params.min_thickness;
+                if is_thin {
+                    let current = thin_count.fetch_add(1, Ordering::Relaxed);
+                    if current >= params.max_regions {
+                        truncated_flag.store(true, Ordering::Relaxed);
                     }
                 }
-                if sum.norm() < params.epsilon {
-                    vertices_skipped += 1;
-                    continue;
-                }
-                sum.normalize()
+                (t, Some(face_idx), is_thin)
+            } else {
+                // Ray didn't hit anything (open mesh or very thick)
+                (f64::INFINITY, None, false)
             }
-        };
+        })
+        .collect();
 
-        // Cast ray inward (opposite to normal)
-        let ray_dir = -normal;
-        let ray_origin = vertex.position;
+    // Aggregate results sequentially
+    let mut vertex_thickness = Vec::with_capacity(vertex_count);
+    let mut thin_regions = Vec::new();
+    let mut vertices_skipped = 0;
+    let mut vertices_with_hits = 0;
+    let truncated = truncated_flag.load(Ordering::Relaxed);
 
-        // Compute inverse direction for AABB tests
-        let dir_inv = Vector3::new(
-            if ray_dir.x.abs() > params.epsilon { 1.0 / ray_dir.x } else { f64::MAX },
-            if ray_dir.y.abs() > params.epsilon { 1.0 / ray_dir.y } else { f64::MAX },
-            if ray_dir.z.abs() > params.epsilon { 1.0 / ray_dir.z } else { f64::MAX },
-        );
+    for (vertex_idx, (thickness, hit_face, is_thin)) in vertex_results.into_iter().enumerate() {
+        vertex_thickness.push(thickness);
 
-        // Skip faces adjacent to this vertex to avoid self-intersection
-        let skip_faces = &vertex_faces[vertex_idx];
-
-        // Trace ray
-        if let Some((t, face_idx)) = trace_ray(
-            &bvh,
-            &ray_origin,
-            &ray_dir,
-            &dir_inv,
-            &triangles,
-            max_dist,
-            params.epsilon,
-            skip_faces,
-        ) {
-            vertex_thickness[vertex_idx] = t;
+        if thickness.is_finite() {
             vertices_with_hits += 1;
-
-            // Check if this is a thin region
-            if t < params.min_thickness && thin_regions.len() < params.max_regions {
+            if is_thin && thin_regions.len() < params.max_regions {
                 thin_regions.push(ThinRegion {
                     vertex_index: vertex_idx,
-                    position: ray_origin,
-                    thickness: t,
-                    hit_face: Some(face_idx),
+                    position: mesh.vertices[vertex_idx].position,
+                    thickness,
+                    hit_face,
                 });
-            } else if t < params.min_thickness {
-                truncated = true;
             }
         } else {
-            // Ray didn't hit anything (open mesh or very thick)
             vertices_skipped += 1;
         }
     }

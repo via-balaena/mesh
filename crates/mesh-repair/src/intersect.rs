@@ -4,6 +4,8 @@
 //! Self-intersections cause 3D printing failures and indicate mesh topology issues.
 
 use nalgebra::{Point3, Vector3};
+use rayon::prelude::*;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tracing::{debug, info, warn};
 
 use crate::types::{Mesh, Triangle};
@@ -173,62 +175,87 @@ pub fn detect_self_intersections(mesh: &Mesh, params: &IntersectionParams) -> Se
         None
     };
 
-    let mut intersecting_pairs = Vec::new();
-    let mut intersection_count = 0;
     let max_pairs = if params.max_reported == 0 {
         usize::MAX
     } else {
         params.max_reported
     };
 
-    // Check all triangle pairs (with AABB culling)
-    'outer: for i in 0..face_count {
-        for j in (i + 1)..face_count {
-            // Skip if AABBs don't overlap
-            if !aabbs[i].overlaps(&aabbs[j]) {
-                continue;
+    // Shared atomics for counting and early termination
+    let intersection_count = AtomicUsize::new(0);
+    let should_stop = AtomicBool::new(false);
+
+    // Process triangle pairs in parallel
+    // We parallelize the outer loop and collect intersecting pairs from each chunk
+    let intersecting_pairs: Vec<(u32, u32)> = (0..face_count)
+        .into_par_iter()
+        .flat_map(|i| {
+            // Early termination check
+            if should_stop.load(Ordering::Relaxed) {
+                return Vec::new();
             }
 
-            // Skip adjacent triangles if requested
-            if let Some(ref adj) = adjacency {
-                if adj[i].contains(&(j as u32)) {
+            let mut local_pairs = Vec::new();
+
+            for j in (i + 1)..face_count {
+                // Early termination check inside inner loop
+                if should_stop.load(Ordering::Relaxed) {
+                    break;
+                }
+
+                // Skip if AABBs don't overlap
+                if !aabbs[i].overlaps(&aabbs[j]) {
                     continue;
                 }
-            }
 
-            // Perform actual triangle-triangle intersection test
-            if triangles_intersect(&triangles[i], &triangles[j], params.epsilon) {
-                intersection_count += 1;
-
-                if intersecting_pairs.len() < max_pairs {
-                    intersecting_pairs.push((i as u32, j as u32));
+                // Skip adjacent triangles if requested
+                if let Some(ref adj) = adjacency {
+                    if adj[i].contains(&(j as u32)) {
+                        continue;
+                    }
                 }
 
-                if intersection_count >= max_pairs && params.max_reported > 0 {
-                    debug!(
-                        "Stopping intersection search after {} pairs (max_reported limit)",
-                        max_pairs
-                    );
-                    break 'outer;
+                // Perform actual triangle-triangle intersection test
+                if triangles_intersect(&triangles[i], &triangles[j], params.epsilon) {
+                    let count = intersection_count.fetch_add(1, Ordering::Relaxed);
+
+                    if count < max_pairs {
+                        local_pairs.push((i as u32, j as u32));
+                    }
+
+                    if count + 1 >= max_pairs && params.max_reported > 0 {
+                        should_stop.store(true, Ordering::Relaxed);
+                        break;
+                    }
                 }
             }
-        }
+
+            local_pairs
+        })
+        .collect();
+
+    let final_count = intersection_count.load(Ordering::Relaxed);
+    let truncated = params.max_reported > 0 && final_count >= max_pairs;
+
+    if truncated {
+        debug!(
+            "Stopping intersection search after {} pairs (max_reported limit)",
+            max_pairs
+        );
     }
 
-    let truncated = params.max_reported > 0 && intersection_count >= max_pairs;
-
-    if intersection_count > 0 {
+    if final_count > 0 {
         warn!(
             "Found {} self-intersecting triangle pair(s)",
-            intersection_count
+            final_count
         );
     } else {
         info!("No self-intersections found");
     }
 
     SelfIntersectionResult {
-        has_intersections: intersection_count > 0,
-        intersection_count,
+        has_intersections: final_count > 0,
+        intersection_count: final_count,
         intersecting_pairs,
         faces_checked: face_count,
         truncated,

@@ -7,7 +7,7 @@ pub mod rim;
 pub mod validation;
 
 pub use generate::{
-    generate_shell, generate_shell_no_validation,
+    generate_shell, generate_shell_no_validation, generate_shell_with_progress,
     ShellParams, ShellResult, WallGenerationMethod,
 };
 pub use validation::{

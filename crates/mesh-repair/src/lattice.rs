@@ -58,6 +58,13 @@ pub struct LatticeParams {
 
     /// Whether to trim to mesh bounds.
     pub trim_to_bounds: bool,
+
+    /// Whether to preserve beam data for 3MF beam lattice export.
+    ///
+    /// When enabled, the LatticeResult will include beam_data with the
+    /// raw strut definitions that can be exported using the 3MF Beam
+    /// Lattice Extension for more efficient representation.
+    pub preserve_beam_data: bool,
 }
 
 impl Default for LatticeParams {
@@ -72,6 +79,7 @@ impl Default for LatticeParams {
             min_feature_size: 0.1,
             resolution: 10,
             trim_to_bounds: true,
+            preserve_beam_data: false,
         }
     }
 }
@@ -137,6 +145,15 @@ impl LatticeParams {
         self.resolution = resolution.max(2);
         self
     }
+
+    /// Enable beam data preservation for 3MF beam lattice export.
+    ///
+    /// When enabled, the generated LatticeResult will include `beam_data`
+    /// with raw strut definitions suitable for 3MF Beam Lattice Extension export.
+    pub fn with_beam_export(mut self, enable: bool) -> Self {
+        self.preserve_beam_data = enable;
+        self
+    }
 }
 
 /// Type of lattice structure.
@@ -194,6 +211,36 @@ pub enum DensityMap {
         transition_depth: f64,
     },
 
+    /// Density based on stress field analysis.
+    ///
+    /// Higher stress regions get higher density for reinforcement.
+    /// The stress field is provided as a lookup function that returns
+    /// a normalized stress value (0.0 to 1.0) at any point.
+    ///
+    /// # Example
+    /// ```ignore
+    /// // Create stress-based density from FEA results
+    /// let stress_field = StressFieldData::from_fea_results(&fea_mesh, &stress_values);
+    /// let density_map = DensityMap::StressField {
+    ///     stress_lookup: stress_field,
+    ///     min_density: 0.1,  // 10% in low-stress regions
+    ///     max_density: 0.8,  // 80% in high-stress regions
+    ///     stress_exponent: 1.0,  // Linear mapping
+    /// };
+    /// ```
+    StressField {
+        /// Function that returns normalized stress (0.0-1.0) at a point.
+        /// Higher values indicate higher stress.
+        stress_lookup: std::sync::Arc<dyn Fn(Point3<f64>) -> f64 + Send + Sync>,
+        /// Minimum density in low-stress regions.
+        min_density: f64,
+        /// Maximum density in high-stress regions.
+        max_density: f64,
+        /// Exponent for stress-to-density mapping.
+        /// 1.0 = linear, >1.0 = emphasize high stress, <1.0 = emphasize low stress.
+        stress_exponent: f64,
+    },
+
     /// Custom function.
     Function(std::sync::Arc<dyn Fn(Point3<f64>) -> f64 + Send + Sync>),
 }
@@ -212,6 +259,10 @@ impl std::fmt::Debug for DensityMap {
             DensityMap::SurfaceDistance { surface_density, core_density, transition_depth } => {
                 write!(f, "SurfaceDistance {{ surface_density: {}, core_density: {}, transition_depth: {} }}",
                     surface_density, core_density, transition_depth)
+            }
+            DensityMap::StressField { min_density, max_density, stress_exponent, .. } => {
+                write!(f, "StressField {{ min_density: {}, max_density: {}, stress_exponent: {} }}",
+                    min_density, max_density, stress_exponent)
             }
             DensityMap::Function(_) => write!(f, "Function(<closure>)"),
         }
@@ -268,7 +319,88 @@ impl DensityMap {
                 (*surface_density + *core_density) / 2.0
             }
 
+            DensityMap::StressField {
+                stress_lookup,
+                min_density,
+                max_density,
+                stress_exponent,
+            } => {
+                // Get normalized stress at this point (0.0 to 1.0)
+                let stress = stress_lookup(point).clamp(0.0, 1.0);
+
+                // Apply exponent for non-linear mapping
+                // stress_exponent > 1.0: emphasizes high-stress regions
+                // stress_exponent < 1.0: more gradual transition
+                let mapped_stress = stress.powf(*stress_exponent);
+
+                // Interpolate between min and max density based on stress
+                // Higher stress = higher density for structural reinforcement
+                min_density + mapped_stress * (max_density - min_density)
+            }
+
             DensityMap::Function(f) => f(point),
+        }
+    }
+
+    /// Create a stress-based density map from a stress field function.
+    ///
+    /// This is a convenience constructor for creating stress-adaptive infill.
+    /// The stress function should return normalized stress values (0.0-1.0).
+    ///
+    /// # Arguments
+    /// * `stress_fn` - Function that returns normalized stress at any point
+    /// * `min_density` - Density in low-stress regions (e.g., 0.1 for 10%)
+    /// * `max_density` - Density in high-stress regions (e.g., 0.8 for 80%)
+    ///
+    /// # Example
+    /// ```ignore
+    /// let stress_map = DensityMap::from_stress_field(
+    ///     |point| compute_von_mises_stress(point) / max_stress,
+    ///     0.1,  // 10% minimum
+    ///     0.7,  // 70% maximum
+    /// );
+    /// ```
+    pub fn from_stress_field<F>(stress_fn: F, min_density: f64, max_density: f64) -> Self
+    where
+        F: Fn(Point3<f64>) -> f64 + Send + Sync + 'static,
+    {
+        DensityMap::StressField {
+            stress_lookup: std::sync::Arc::new(stress_fn),
+            min_density: min_density.clamp(0.0, 1.0),
+            max_density: max_density.clamp(0.0, 1.0),
+            stress_exponent: 1.0, // Linear by default
+        }
+    }
+
+    /// Create a stress-based density map with custom exponent.
+    ///
+    /// The exponent controls how stress maps to density:
+    /// - `exponent = 1.0`: Linear mapping
+    /// - `exponent > 1.0`: Emphasize high-stress regions (more aggressive reinforcement)
+    /// - `exponent < 1.0`: More gradual density increase
+    ///
+    /// # Example
+    /// ```ignore
+    /// // Quadratic emphasis on high-stress regions
+    /// let stress_map = DensityMap::from_stress_field_with_exponent(
+    ///     |point| stress_at(point),
+    ///     0.1, 0.8, 2.0  // Exponent of 2.0 for quadratic response
+    /// );
+    /// ```
+    pub fn from_stress_field_with_exponent<F>(
+        stress_fn: F,
+        min_density: f64,
+        max_density: f64,
+        exponent: f64,
+    ) -> Self
+    where
+        F: Fn(Point3<f64>) -> f64 + Send + Sync + 'static,
+    {
+        DensityMap::StressField {
+            stress_lookup: std::sync::Arc::new(stress_fn),
+            min_density: min_density.clamp(0.0, 1.0),
+            max_density: max_density.clamp(0.0, 1.0),
+            stress_exponent: exponent.max(0.01), // Prevent division issues
         }
     }
 }
@@ -287,6 +419,13 @@ pub struct LatticeResult {
 
     /// Total strut length (for strut-based lattices).
     pub total_strut_length: f64,
+
+    /// Raw beam data for 3MF beam lattice export.
+    ///
+    /// Only populated when `LatticeParams::preserve_beam_data` is true.
+    /// Contains strut definitions that can be exported using the 3MF
+    /// Beam Lattice Extension for more efficient file representation.
+    pub beam_data: Option<crate::io::BeamLatticeData>,
 }
 
 /// Generate a lattice structure within the bounding box of a mesh.
@@ -306,6 +445,8 @@ pub fn generate_lattice(params: &LatticeParams, bounds: (Point3<f64>, Point3<f64
 
 /// Generate a cubic lattice.
 fn generate_cubic_lattice(params: &LatticeParams, bounds: (Point3<f64>, Point3<f64>)) -> LatticeResult {
+    use crate::io::{Beam, BeamLatticeData};
+
     let (min, max) = bounds;
     let size = max - min;
 
@@ -315,6 +456,22 @@ fn generate_cubic_lattice(params: &LatticeParams, bounds: (Point3<f64>, Point3<f
 
     let mut mesh = Mesh::new();
     let mut total_strut_length = 0.0;
+
+    // For beam data preservation
+    let mut beam_data = if params.preserve_beam_data {
+        Some(BeamLatticeData::new(params.strut_thickness * params.density / 2.0))
+    } else {
+        None
+    };
+    // Vertex deduplication map: (ix, iy, iz) -> vertex index
+    let mut vertex_map: HashMap<(usize, usize, usize), u32> = HashMap::new();
+
+    // Helper to get or insert a beam vertex
+    let mut get_beam_vertex = |beam_data: &mut BeamLatticeData, ix: usize, iy: usize, iz: usize, corner: Point3<f64>| -> u32 {
+        *vertex_map.entry((ix, iy, iz)).or_insert_with(|| {
+            beam_data.add_vertex(corner)
+        })
+    };
 
     // Generate struts for cubic lattice
     // Each cell has struts along its edges
@@ -341,6 +498,13 @@ fn generate_cubic_lattice(params: &LatticeParams, bounds: (Point3<f64>, Point3<f
                     let end = corner + Vector3::new(params.cell_size, 0.0, 0.0);
                     add_cylindrical_strut(&mut mesh, corner, end, strut_radius, 6);
                     total_strut_length += params.cell_size;
+
+                    // Capture beam data if enabled
+                    if let Some(ref mut bd) = beam_data {
+                        let v1 = get_beam_vertex(bd, ix, iy, iz, corner);
+                        let v2 = get_beam_vertex(bd, ix + 1, iy, iz, end);
+                        bd.beams.push(Beam::new(v1, v2, strut_radius));
+                    }
                 }
 
                 // Add struts in Y direction
@@ -348,6 +512,13 @@ fn generate_cubic_lattice(params: &LatticeParams, bounds: (Point3<f64>, Point3<f
                     let end = corner + Vector3::new(0.0, params.cell_size, 0.0);
                     add_cylindrical_strut(&mut mesh, corner, end, strut_radius, 6);
                     total_strut_length += params.cell_size;
+
+                    // Capture beam data if enabled
+                    if let Some(ref mut bd) = beam_data {
+                        let v1 = get_beam_vertex(bd, ix, iy, iz, corner);
+                        let v2 = get_beam_vertex(bd, ix, iy + 1, iz, end);
+                        bd.beams.push(Beam::new(v1, v2, strut_radius));
+                    }
                 }
 
                 // Add struts in Z direction
@@ -355,6 +526,13 @@ fn generate_cubic_lattice(params: &LatticeParams, bounds: (Point3<f64>, Point3<f
                     let end = corner + Vector3::new(0.0, 0.0, params.cell_size);
                     add_cylindrical_strut(&mut mesh, corner, end, strut_radius, 6);
                     total_strut_length += params.cell_size;
+
+                    // Capture beam data if enabled
+                    if let Some(ref mut bd) = beam_data {
+                        let v1 = get_beam_vertex(bd, ix, iy, iz, corner);
+                        let v2 = get_beam_vertex(bd, ix, iy, iz + 1, end);
+                        bd.beams.push(Beam::new(v1, v2, strut_radius));
+                    }
                 }
             }
         }
@@ -370,6 +548,7 @@ fn generate_cubic_lattice(params: &LatticeParams, bounds: (Point3<f64>, Point3<f
         actual_density,
         cell_count,
         total_strut_length,
+        beam_data,
     }
 }
 
@@ -468,11 +647,13 @@ fn generate_octet_truss_lattice(params: &LatticeParams, bounds: (Point3<f64>, Po
     let strut_volume = total_strut_length * std::f64::consts::PI * (params.strut_thickness * params.density / 2.0).powi(2);
     let actual_density = strut_volume / total_volume;
 
+    // TODO: Implement beam data preservation for octet-truss lattice
     LatticeResult {
         mesh,
         actual_density,
         cell_count,
         total_strut_length,
+        beam_data: None,
     }
 }
 
@@ -609,11 +790,13 @@ where
 
     let cell_count = ((size.x / params.cell_size) * (size.y / params.cell_size) * (size.z / params.cell_size)) as usize;
 
+    // TPMS surfaces don't have beam representations
     LatticeResult {
         mesh,
         actual_density: params.density,
         cell_count,
         total_strut_length: 0.0, // Not applicable for TPMS
+        beam_data: None,
     }
 }
 
@@ -1847,5 +2030,134 @@ mod tests {
         // Should just be the shell
         assert_eq!(combined.vertices.len(), shell.vertices.len());
         assert_eq!(combined.faces.len(), shell.faces.len());
+    }
+
+    // ========================================================================
+    // Stress Field Density Map Tests
+    // ========================================================================
+
+    #[test]
+    fn test_density_map_stress_field_linear() {
+        // Create a simple stress field that increases with X coordinate
+        let stress_map = DensityMap::from_stress_field(
+            |point| (point.x / 10.0).clamp(0.0, 1.0), // Stress from 0 to 1 as x goes 0 to 10
+            0.1, // min density
+            0.9, // max density
+        );
+
+        // At x=0, stress=0, density should be min
+        let density_at_zero = stress_map.evaluate(Point3::new(0.0, 5.0, 5.0));
+        assert!((density_at_zero - 0.1).abs() < 1e-6, "Expected 0.1, got {}", density_at_zero);
+
+        // At x=10, stress=1, density should be max
+        let density_at_max = stress_map.evaluate(Point3::new(10.0, 5.0, 5.0));
+        assert!((density_at_max - 0.9).abs() < 1e-6, "Expected 0.9, got {}", density_at_max);
+
+        // At x=5, stress=0.5, density should be midpoint
+        let density_at_mid = stress_map.evaluate(Point3::new(5.0, 5.0, 5.0));
+        let expected_mid = 0.1 + 0.5 * (0.9 - 0.1); // 0.5
+        assert!((density_at_mid - expected_mid).abs() < 1e-6, "Expected {}, got {}", expected_mid, density_at_mid);
+    }
+
+    #[test]
+    fn test_density_map_stress_field_with_exponent() {
+        // Create stress field with quadratic exponent (emphasize high stress)
+        let stress_map = DensityMap::from_stress_field_with_exponent(
+            |point| (point.x / 10.0).clamp(0.0, 1.0),
+            0.0, // min density
+            1.0, // max density
+            2.0, // quadratic exponent
+        );
+
+        // At x=5 (stress=0.5), with exponent=2, mapped_stress = 0.25
+        let density_at_mid = stress_map.evaluate(Point3::new(5.0, 0.0, 0.0));
+        let expected = 0.0 + 0.25 * (1.0 - 0.0); // 0.25
+        assert!((density_at_mid - expected).abs() < 1e-6, "Expected {}, got {}", expected, density_at_mid);
+
+        // At x=10 (stress=1.0), mapped_stress = 1.0
+        let density_at_max = stress_map.evaluate(Point3::new(10.0, 0.0, 0.0));
+        assert!((density_at_max - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_density_map_stress_field_radial_stress() {
+        // Simulate stress concentrated at center (like a point load)
+        let center = Point3::new(5.0, 5.0, 5.0);
+        let max_dist = 5.0;
+
+        let stress_map = DensityMap::from_stress_field(
+            move |point| {
+                let dist = (point - center).norm();
+                // Inverse of distance: high stress near center, low at edges
+                (1.0 - (dist / max_dist).min(1.0)).clamp(0.0, 1.0)
+            },
+            0.2, // min density at edges
+            0.8, // max density at center
+        );
+
+        // At center, stress=1.0, density should be max
+        let density_at_center = stress_map.evaluate(center);
+        assert!((density_at_center - 0.8).abs() < 1e-6);
+
+        // At edge (5mm from center), stress=0, density should be min
+        let edge_point = Point3::new(10.0, 5.0, 5.0);
+        let density_at_edge = stress_map.evaluate(edge_point);
+        assert!((density_at_edge - 0.2).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_density_map_stress_field_clamping() {
+        // Test that stress values outside 0-1 are clamped
+        let stress_map = DensityMap::from_stress_field(
+            |_point| 2.0, // Invalid: returns > 1.0
+            0.1,
+            0.9,
+        );
+
+        // Should clamp to 1.0 and return max density
+        let density = stress_map.evaluate(Point3::origin());
+        assert!((density - 0.9).abs() < 1e-6);
+
+        // Test negative stress
+        let stress_map_neg = DensityMap::from_stress_field(
+            |_point| -0.5, // Invalid: returns < 0.0
+            0.1,
+            0.9,
+        );
+
+        // Should clamp to 0.0 and return min density
+        let density_neg = stress_map_neg.evaluate(Point3::origin());
+        assert!((density_neg - 0.1).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_density_map_stress_field_debug() {
+        let stress_map = DensityMap::from_stress_field(|_| 0.5, 0.1, 0.9);
+
+        let debug_str = format!("{:?}", stress_map);
+        assert!(debug_str.contains("StressField"));
+        assert!(debug_str.contains("min_density: 0.1"));
+        assert!(debug_str.contains("max_density: 0.9"));
+    }
+
+    #[test]
+    fn test_lattice_with_stress_based_density() {
+        // Generate a lattice using stress-based density
+        let mut params = LatticeParams::cubic(3.0);
+
+        // Stress field: higher stress near the bottom (Z=0)
+        params.density_map = Some(DensityMap::from_stress_field(
+            |point| 1.0 - (point.z / 10.0).clamp(0.0, 1.0),
+            0.2, // sparse at top
+            0.6, // dense at bottom
+        ));
+
+        let bounds = (Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 10.0, 10.0));
+        let result = generate_lattice(&params, bounds);
+
+        // Should generate a valid lattice
+        assert!(result.mesh.vertices.len() > 0);
+        assert!(result.mesh.faces.len() > 0);
+        assert!(result.cell_count > 0);
     }
 }

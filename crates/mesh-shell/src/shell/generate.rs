@@ -442,6 +442,422 @@ pub fn generate_shell_no_validation(inner_shell: &Mesh, params: &ShellParams) ->
     generate_shell(inner_shell, &params)
 }
 
+/// Generate a printable shell with progress reporting.
+///
+/// This is a progress-reporting variant of [`generate_shell`] that allows tracking
+/// the shell generation progress and supports cancellation via the progress callback.
+///
+/// The shell generation proceeds through these phases:
+/// 1. Vertex normal computation
+/// 2. Outer surface generation (normal offset or SDF)
+/// 3. Inner/outer face creation
+/// 4. Rim generation to connect boundaries
+/// 5. Optional validation
+///
+/// # Arguments
+/// * `inner_shell` - The inner surface mesh (from offset stage)
+/// * `params` - Shell generation parameters
+/// * `callback` - Optional progress callback. Returns `false` to request cancellation.
+///
+/// # Returns
+/// A tuple of (shell mesh, generation result).
+/// If cancelled via callback, returns the partial shell.
+///
+/// # Example
+/// ```ignore
+/// use mesh_shell::{generate_shell_with_progress, ShellParams};
+/// use mesh_repair::progress::ProgressCallback;
+///
+/// let callback: ProgressCallback = Box::new(|progress| {
+///     println!("{}% - {}", progress.percent(), progress.message);
+///     true // Continue
+/// });
+///
+/// let (shell, result) = generate_shell_with_progress(&inner_mesh, &ShellParams::default(), Some(&callback));
+/// ```
+pub fn generate_shell_with_progress(
+    inner_shell: &Mesh,
+    params: &ShellParams,
+    callback: Option<&mesh_repair::progress::ProgressCallback>,
+) -> (Mesh, ShellResult) {
+    use mesh_repair::progress::ProgressTracker;
+
+    let has_variable_thickness = params.thickness_map.is_some();
+
+    if has_variable_thickness {
+        info!(
+            "Generating shell with variable thickness (default={:.2}mm), method={}",
+            params.wall_thickness_mm, params.wall_generation_method
+        );
+    } else {
+        info!(
+            "Generating shell with thickness={:.2}mm, method={}",
+            params.wall_thickness_mm, params.wall_generation_method
+        );
+    }
+
+    // Total phases: normal computation (10%), outer generation (40%), faces (20%), rim (20%), validation (10%)
+    let tracker = ProgressTracker::new(100);
+
+    // Phase 1: Start and compute normals
+    tracker.set(5);
+    if !tracker.maybe_callback(callback, "Computing vertex normals".to_string()) {
+        return empty_shell_result(params);
+    }
+
+    let n = inner_shell.vertices.len();
+    let mut inner_with_normals = inner_shell.clone();
+    compute_vertex_normals(&mut inner_with_normals);
+
+    // Dispatch based on wall generation method
+    match params.wall_generation_method {
+        WallGenerationMethod::Normal => {
+            generate_shell_normal_with_progress(inner_shell, params, &inner_with_normals, n, &tracker, callback)
+        }
+        WallGenerationMethod::Sdf => {
+            generate_shell_sdf_with_progress(inner_shell, params, &inner_with_normals, &tracker, callback)
+        }
+    }
+}
+
+/// Helper to create an empty shell result for early cancellation
+fn empty_shell_result(params: &ShellParams) -> (Mesh, ShellResult) {
+    (
+        Mesh::new(),
+        ShellResult {
+            inner_vertex_count: 0,
+            outer_vertex_count: 0,
+            rim_face_count: 0,
+            total_face_count: 0,
+            boundary_size: 0,
+            validation: None,
+            wall_method: params.wall_generation_method,
+            variable_thickness: params.thickness_map.is_some(),
+        },
+    )
+}
+
+/// Generate shell using normal-based offset with progress reporting.
+fn generate_shell_normal_with_progress(
+    inner_shell: &Mesh,
+    params: &ShellParams,
+    inner_with_normals: &Mesh,
+    n: usize,
+    tracker: &mesh_repair::progress::ProgressTracker,
+    callback: Option<&mesh_repair::progress::ProgressCallback>,
+) -> (Mesh, ShellResult) {
+    let mut shell = Mesh::new();
+
+    // Phase 2: Copy inner vertices
+    tracker.set(10);
+    if !tracker.maybe_callback(callback, "Copying inner vertices".to_string()) {
+        return empty_shell_result(params);
+    }
+
+    for vertex in &inner_with_normals.vertices {
+        shell.vertices.push(vertex.clone());
+    }
+
+    // Phase 3: Generate outer vertices by offsetting along normals
+    tracker.set(30);
+    if !tracker.maybe_callback(callback, "Generating outer surface vertices".to_string()) {
+        return empty_shell_result(params);
+    }
+
+    for (i, vertex) in inner_with_normals.vertices.iter().enumerate() {
+        let thickness = params.get_vertex_thickness(i as u32);
+        let normal = vertex.normal.unwrap_or_else(|| nalgebra::Vector3::new(0.0, 0.0, 1.0));
+        let outer_pos = vertex.position + normal * thickness;
+
+        let mut outer_vertex = vertex.clone();
+        outer_vertex.position = outer_pos;
+        outer_vertex.normal = Some(normal);
+
+        shell.vertices.push(outer_vertex);
+    }
+
+    debug!("Generated {} inner + {} outer vertices", n, n);
+
+    // Phase 4: Create inner and outer faces
+    tracker.set(50);
+    if !tracker.maybe_callback(callback, "Creating inner and outer faces".to_string()) {
+        return empty_shell_result(params);
+    }
+
+    // Inner faces (reversed winding so normal points inward)
+    for face in &inner_shell.faces {
+        shell.faces.push([face[0], face[2], face[1]]);
+    }
+
+    // Outer faces with offset indices (original winding for outward normals)
+    for face in &inner_shell.faces {
+        let n32 = n as u32;
+        shell.faces.push([face[0] + n32, face[1] + n32, face[2] + n32]);
+    }
+
+    let inner_face_count = inner_shell.faces.len();
+    debug!("Added {} inner + {} outer faces", inner_face_count, inner_face_count);
+
+    // Phase 5: Generate rim
+    tracker.set(70);
+    if !tracker.maybe_callback(callback, "Generating rim to connect boundaries".to_string()) {
+        return empty_shell_result(params);
+    }
+
+    let (rim_faces, boundary_size) = generate_rim(inner_with_normals, n);
+
+    let rim_face_count = rim_faces.len();
+    for face in rim_faces {
+        shell.faces.push(face);
+    }
+
+    info!(
+        "Shell generation complete: {} vertices, {} faces",
+        shell.vertices.len(),
+        shell.faces.len()
+    );
+
+    // Phase 6: Optional validation
+    tracker.set(90);
+    let validation = if params.validate_after_generation {
+        if !tracker.maybe_callback(callback, "Validating shell".to_string()) {
+            return (
+                shell.clone(),
+                ShellResult {
+                    inner_vertex_count: n,
+                    outer_vertex_count: n,
+                    rim_face_count,
+                    total_face_count: shell.faces.len(),
+                    boundary_size,
+                    validation: None,
+                    wall_method: WallGenerationMethod::Normal,
+                    variable_thickness: params.thickness_map.is_some(),
+                },
+            );
+        }
+
+        let validation_result = validate_shell(&shell);
+        if !validation_result.is_printable() {
+            warn!(
+                "Generated shell has {} validation issue(s)",
+                validation_result.issue_count()
+            );
+        }
+        Some(validation_result)
+    } else {
+        None
+    };
+
+    tracker.set(100);
+    let _ = tracker.maybe_callback(callback, "Shell generation complete".to_string());
+
+    let result = ShellResult {
+        inner_vertex_count: n,
+        outer_vertex_count: n,
+        rim_face_count,
+        total_face_count: shell.faces.len(),
+        boundary_size,
+        validation,
+        wall_method: WallGenerationMethod::Normal,
+        variable_thickness: params.thickness_map.is_some(),
+    };
+
+    (shell, result)
+}
+
+/// Generate shell using SDF-based offset with progress reporting.
+fn generate_shell_sdf_with_progress(
+    inner_shell: &Mesh,
+    params: &ShellParams,
+    inner_with_normals: &Mesh,
+    tracker: &mesh_repair::progress::ProgressTracker,
+    callback: Option<&mesh_repair::progress::ProgressCallback>,
+) -> (Mesh, ShellResult) {
+    let inner_vertex_count = inner_with_normals.vertices.len();
+
+    // Warn if using variable thickness with SDF (not fully supported)
+    if params.thickness_map.is_some() {
+        warn!(
+            "Variable thickness (ThicknessMap) is not fully supported with SDF wall generation. \
+             Using uniform thickness={:.2}mm. Consider using WallGenerationMethod::Normal for variable thickness.",
+            params.wall_thickness_mm
+        );
+    }
+
+    // Phase 2: Create SDF grid
+    tracker.set(20);
+    if !tracker.maybe_callback(callback, "Creating SDF grid".to_string()) {
+        return empty_shell_result(params);
+    }
+
+    let padding = params.wall_thickness_mm + params.sdf_voxel_size_mm * 3.0;
+    let grid_result = SdfGrid::from_mesh_bounds(
+        inner_with_normals,
+        params.sdf_voxel_size_mm,
+        padding,
+        params.sdf_max_voxels,
+    );
+
+    let mut grid = match grid_result {
+        Ok(g) => g,
+        Err(e) => {
+            warn!("SDF grid creation failed: {:?}, falling back to normal method", e);
+            return generate_shell_normal(inner_shell, params);
+        }
+    };
+
+    info!(
+        dims = ?grid.dims,
+        total_voxels = grid.total_voxels(),
+        "Created SDF grid for wall generation"
+    );
+
+    // Phase 3: Compute SDF
+    tracker.set(40);
+    if !tracker.maybe_callback(callback, "Computing signed distance field".to_string()) {
+        return empty_shell_result(params);
+    }
+
+    grid.compute_sdf(inner_with_normals);
+
+    // Phase 4: Offset SDF by wall thickness
+    tracker.set(50);
+    if !tracker.maybe_callback(callback, "Applying wall thickness offset".to_string()) {
+        return empty_shell_result(params);
+    }
+
+    for val in &mut grid.values {
+        *val -= params.wall_thickness_mm as f32;
+    }
+
+    debug!("Applied wall thickness offset to SDF");
+
+    // Phase 5: Extract outer surface from offset SDF
+    tracker.set(60);
+    if !tracker.maybe_callback(callback, "Extracting outer surface isosurface".to_string()) {
+        return empty_shell_result(params);
+    }
+
+    let outer_mesh = match extract_isosurface(&grid) {
+        Ok(m) => m,
+        Err(e) => {
+            warn!("Isosurface extraction failed: {:?}, falling back to normal method", e);
+            return generate_shell_normal(inner_shell, params);
+        }
+    };
+
+    let outer_vertex_count = outer_mesh.vertices.len();
+    debug!(
+        "Extracted outer surface: {} vertices, {} faces",
+        outer_vertex_count,
+        outer_mesh.faces.len()
+    );
+
+    // Phase 6: Combine inner and outer surfaces
+    tracker.set(70);
+    if !tracker.maybe_callback(callback, "Combining inner and outer surfaces".to_string()) {
+        return empty_shell_result(params);
+    }
+
+    let mut shell = Mesh::new();
+
+    // Add inner vertices
+    for vertex in &inner_with_normals.vertices {
+        shell.vertices.push(vertex.clone());
+    }
+
+    // Add outer vertices (offset by inner count)
+    let inner_count = inner_with_normals.vertices.len() as u32;
+    for vertex in &outer_mesh.vertices {
+        shell.vertices.push(vertex.clone());
+    }
+
+    // Add inner faces (reversed winding so normal points inward)
+    for face in &inner_with_normals.faces {
+        shell.faces.push([face[0], face[2], face[1]]);
+    }
+
+    // Add outer faces (keep original winding, offset indices)
+    for face in &outer_mesh.faces {
+        shell.faces.push([
+            face[0] + inner_count,
+            face[1] + inner_count,
+            face[2] + inner_count,
+        ]);
+    }
+
+    // Phase 7: Generate rim connecting inner and outer boundaries
+    tracker.set(80);
+    if !tracker.maybe_callback(callback, "Generating rim to connect boundaries".to_string()) {
+        return empty_shell_result(params);
+    }
+
+    let (rim_faces, boundary_size) = generate_rim_for_sdf_shell(
+        inner_with_normals,
+        &outer_mesh,
+        inner_count as usize,
+    );
+
+    let rim_face_count = rim_faces.len();
+    for face in rim_faces {
+        shell.faces.push(face);
+    }
+
+    info!(
+        "SDF shell generation complete: {} vertices, {} faces (rim: {})",
+        shell.vertices.len(),
+        shell.faces.len(),
+        rim_face_count
+    );
+
+    // Phase 8: Optional validation
+    tracker.set(90);
+    let validation = if params.validate_after_generation {
+        if !tracker.maybe_callback(callback, "Validating shell".to_string()) {
+            return (
+                shell.clone(),
+                ShellResult {
+                    inner_vertex_count,
+                    outer_vertex_count,
+                    rim_face_count,
+                    total_face_count: shell.faces.len(),
+                    boundary_size,
+                    validation: None,
+                    wall_method: WallGenerationMethod::Sdf,
+                    variable_thickness: false,
+                },
+            );
+        }
+
+        let validation_result = validate_shell(&shell);
+        if !validation_result.is_printable() {
+            warn!(
+                "Generated shell has {} validation issue(s)",
+                validation_result.issue_count()
+            );
+        }
+        Some(validation_result)
+    } else {
+        None
+    };
+
+    tracker.set(100);
+    let _ = tracker.maybe_callback(callback, "Shell generation complete".to_string());
+
+    let result = ShellResult {
+        inner_vertex_count,
+        outer_vertex_count,
+        rim_face_count,
+        total_face_count: shell.faces.len(),
+        boundary_size,
+        validation,
+        wall_method: WallGenerationMethod::Sdf,
+        variable_thickness: false,
+    };
+
+    (shell, result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

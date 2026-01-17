@@ -749,6 +749,235 @@ fn requeue_vertex_edges(
     }
 }
 
+/// Decimate a mesh with progress reporting.
+///
+/// This is a progress-reporting variant of [`decimate_mesh`] that allows tracking
+/// the decimation progress and supports cancellation via the progress callback.
+///
+/// # Arguments
+/// * `mesh` - The input mesh to decimate
+/// * `params` - Decimation parameters
+/// * `callback` - Optional progress callback. Returns `false` to request cancellation.
+///
+/// # Returns
+/// A `DecimateResult` containing the decimated mesh and statistics.
+/// If cancelled via callback, returns the partially decimated mesh.
+///
+/// # Example
+/// ```ignore
+/// use mesh_repair::{Mesh, decimate_mesh_with_progress, DecimateParams};
+/// use mesh_repair::progress::ProgressCallback;
+///
+/// let callback: ProgressCallback = Box::new(|progress| {
+///     println!("{}% - {}", progress.percent(), progress.message);
+///     true // Continue
+/// });
+///
+/// let result = decimate_mesh_with_progress(&mesh, &DecimateParams::default(), Some(&callback));
+/// ```
+pub fn decimate_mesh_with_progress(
+    mesh: &Mesh,
+    params: &DecimateParams,
+    callback: Option<&crate::progress::ProgressCallback>,
+) -> DecimateResult {
+    use crate::progress::ProgressTracker;
+
+    let original_triangles = mesh.faces.len();
+
+    // Handle edge cases
+    if original_triangles == 0 {
+        return DecimateResult {
+            mesh: mesh.clone(),
+            original_triangles: 0,
+            final_triangles: 0,
+            collapses_performed: 0,
+            collapses_rejected: 0,
+        };
+    }
+
+    // Calculate target triangle count
+    let target = params.target_triangles.unwrap_or_else(|| {
+        ((original_triangles as f64) * params.target_ratio).ceil() as usize
+    });
+
+    // Don't decimate if already at or below target
+    if original_triangles <= target {
+        return DecimateResult {
+            mesh: mesh.clone(),
+            original_triangles,
+            final_triangles: original_triangles,
+            collapses_performed: 0,
+            collapses_rejected: 0,
+        };
+    }
+
+    // Estimate total collapses needed (roughly triangles_to_remove / 2)
+    let triangles_to_remove = original_triangles - target;
+    let estimated_collapses = triangles_to_remove / 2;
+    let tracker = ProgressTracker::new(estimated_collapses.max(1) as u64);
+
+    // Create working copy of mesh data
+    let mut vertices: Vec<Option<Vertex>> = mesh.vertices.iter().cloned().map(Some).collect();
+    let mut faces: Vec<Option<[u32; 3]>> = mesh.faces.iter().cloned().map(Some).collect();
+    let mut active_faces = original_triangles;
+
+    // Build adjacency
+    let adj = MeshAdjacency::build(&mesh.faces);
+
+    // Compute initial quadrics for each vertex
+    let mut quadrics = compute_vertex_quadrics(mesh, &adj);
+
+    // Identify boundary edges
+    let boundary_edges: HashSet<(u32, u32)> = adj.boundary_edges().collect();
+
+    // Identify sharp feature edges if needed
+    let sharp_edges: HashSet<(u32, u32)> = if params.preserve_sharp_features {
+        find_sharp_edges(mesh, &adj, params.sharp_angle_threshold)
+    } else {
+        HashSet::new()
+    };
+
+    // Build initial edge collapse queue
+    let mut heap = build_collapse_queue(
+        mesh,
+        &quadrics,
+        &boundary_edges,
+        &sharp_edges,
+        params,
+    );
+
+    // Track which vertices have been merged (maps old index -> new index)
+    let mut vertex_remap: HashMap<u32, u32> = HashMap::new();
+
+    let mut collapses_performed = 0;
+    let mut collapses_rejected = 0;
+
+    // Main decimation loop
+    while active_faces > target {
+        // Check for cancellation
+        if tracker.is_cancelled() {
+            break;
+        }
+
+        let Some(collapse) = heap.pop() else {
+            break;
+        };
+
+        // Get actual vertex indices (following remap chain)
+        let v1 = get_actual_vertex(collapse.v1, &vertex_remap);
+        let v2 = get_actual_vertex(collapse.v2, &vertex_remap);
+
+        // Skip if vertices have been merged or are the same
+        if v1 == v2 || vertices[v1 as usize].is_none() || vertices[v2 as usize].is_none() {
+            continue;
+        }
+
+        // Skip if this is a boundary edge and we're preserving boundaries
+        if params.preserve_boundary {
+            let edge = normalize_edge(v1, v2);
+            if boundary_edges.contains(&edge) {
+                collapses_rejected += 1;
+                continue;
+            }
+        }
+
+        // Check if collapse would create non-manifold geometry
+        if !is_collapse_valid(&vertices, &faces, v1, v2) {
+            collapses_rejected += 1;
+            continue;
+        }
+
+        // Check max error threshold
+        if let Some(max_error) = params.max_error {
+            let error = quadrics[v1 as usize].evaluate(
+                collapse.optimal_pos[0],
+                collapse.optimal_pos[1],
+                collapse.optimal_pos[2],
+            ) + quadrics[v2 as usize].evaluate(
+                collapse.optimal_pos[0],
+                collapse.optimal_pos[1],
+                collapse.optimal_pos[2],
+            );
+            if error > max_error {
+                collapses_rejected += 1;
+                continue;
+            }
+        }
+
+        // Perform the collapse: merge v2 into v1
+        // Update v1 position to optimal
+        if let Some(ref mut v) = vertices[v1 as usize] {
+            v.position = Point3::new(
+                collapse.optimal_pos[0],
+                collapse.optimal_pos[1],
+                collapse.optimal_pos[2],
+            );
+        }
+
+        // Combine quadrics
+        let q2 = quadrics[v2 as usize];
+        quadrics[v1 as usize].add(&q2);
+
+        // Remove v2
+        vertices[v2 as usize] = None;
+        vertex_remap.insert(v2, v1);
+
+        // Update faces: replace v2 with v1, remove degenerate faces
+        for face_opt in faces.iter_mut() {
+            if let Some(face) = face_opt {
+                for idx in face.iter_mut() {
+                    let actual = get_actual_vertex(*idx, &vertex_remap);
+                    *idx = actual;
+                    if actual == v2 {
+                        *idx = v1;
+                    }
+                }
+
+                // Check if face is degenerate (has duplicate vertices)
+                if face[0] == face[1] || face[1] == face[2] || face[0] == face[2] {
+                    *face_opt = None;
+                    active_faces -= 1;
+                }
+            }
+        }
+
+        collapses_performed += 1;
+        tracker.increment();
+
+        // Report progress periodically
+        if !tracker.maybe_callback(callback, format!(
+            "Decimating: {} triangles remaining (target: {})",
+            active_faces, target
+        )) {
+            break; // Cancelled
+        }
+
+        // Re-queue edges involving v1 with updated costs
+        requeue_vertex_edges(
+            v1,
+            &vertices,
+            &faces,
+            &quadrics,
+            &boundary_edges,
+            &sharp_edges,
+            &vertex_remap,
+            params,
+            &mut heap,
+        );
+    }
+
+    // Build the final mesh
+    let final_mesh = build_final_mesh(&vertices, &faces);
+
+    DecimateResult {
+        mesh: final_mesh,
+        original_triangles,
+        final_triangles: active_faces,
+        collapses_performed,
+        collapses_rejected,
+    }
+}
+
 /// Build the final compacted mesh from the working data.
 fn build_final_mesh(
     vertices: &[Option<Vertex>],

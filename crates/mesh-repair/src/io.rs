@@ -841,25 +841,252 @@ const RELS_XML: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </Relationships>
 "#;
 
-/// Parameters for 3MF export with material zones.
+// ============================================================================
+// 3MF Extension Types
+// ============================================================================
+
+/// Beam cap mode for 3MF beam lattice extension.
+///
+/// Per the 3MF Beam Lattice Extension specification, beams can have different
+/// cap geometries at their endpoints.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum BeamCap {
+    /// Spherical cap (full sphere at endpoint).
+    #[default]
+    Sphere,
+    /// Hemispherical cap (half sphere extending outward).
+    Hemisphere,
+    /// Flat/butt cap (no cap geometry).
+    Butt,
+}
+
+impl BeamCap {
+    /// Convert to 3MF XML attribute value.
+    pub fn as_3mf_str(&self) -> &'static str {
+        match self {
+            BeamCap::Sphere => "sphere",
+            BeamCap::Hemisphere => "hemisphere",
+            BeamCap::Butt => "butt",
+        }
+    }
+}
+
+/// A single beam in a beam lattice structure.
+///
+/// Represents a conical frustum connecting two vertices with potentially
+/// different radii at each end.
 #[derive(Debug, Clone)]
+pub struct Beam {
+    /// Index of the first vertex.
+    pub v1: u32,
+    /// Index of the second vertex.
+    pub v2: u32,
+    /// Radius at the first vertex (mm).
+    pub r1: f64,
+    /// Radius at the second vertex (mm).
+    pub r2: f64,
+    /// Cap mode at the first vertex.
+    pub cap1: BeamCap,
+    /// Cap mode at the second vertex.
+    pub cap2: BeamCap,
+}
+
+impl Beam {
+    /// Create a new beam with uniform radius and default caps.
+    pub fn new(v1: u32, v2: u32, radius: f64) -> Self {
+        Self {
+            v1,
+            v2,
+            r1: radius,
+            r2: radius,
+            cap1: BeamCap::default(),
+            cap2: BeamCap::default(),
+        }
+    }
+
+    /// Create a new beam with varying radii (tapered).
+    pub fn tapered(v1: u32, v2: u32, r1: f64, r2: f64) -> Self {
+        Self {
+            v1,
+            v2,
+            r1,
+            r2,
+            cap1: BeamCap::default(),
+            cap2: BeamCap::default(),
+        }
+    }
+
+    /// Set cap modes for both endpoints.
+    pub fn with_caps(mut self, cap1: BeamCap, cap2: BeamCap) -> Self {
+        self.cap1 = cap1;
+        self.cap2 = cap2;
+        self
+    }
+}
+
+/// A set of beams for organizational purposes.
+///
+/// Beam sets allow grouping beams for editing, selection, or material assignment.
+/// They do not affect geometry.
+#[derive(Debug, Clone, Default)]
+pub struct BeamSet {
+    /// Optional human-readable name.
+    pub name: Option<String>,
+    /// Optional unique identifier.
+    pub identifier: Option<String>,
+    /// Indices into the parent BeamLatticeData::beams vector.
+    pub beam_indices: Vec<usize>,
+}
+
+/// Complete beam lattice data for 3MF export.
+///
+/// This structure holds the raw beam definitions that can be exported using
+/// the 3MF Beam Lattice Extension, providing a more efficient representation
+/// than triangulated mesh geometry for lattice structures.
+#[derive(Debug, Clone)]
+pub struct BeamLatticeData {
+    /// Shared vertices (node positions) referenced by beams.
+    pub vertices: Vec<nalgebra::Point3<f64>>,
+    /// Beam definitions.
+    pub beams: Vec<Beam>,
+    /// Optional beam sets for grouping.
+    pub beam_sets: Vec<BeamSet>,
+    /// Default radius for beams (mm).
+    pub default_radius: f64,
+    /// Minimum segment length (for validation).
+    pub min_length: f64,
+    /// Default cap mode.
+    pub default_cap: BeamCap,
+}
+
+impl Default for BeamLatticeData {
+    fn default() -> Self {
+        Self {
+            vertices: Vec::new(),
+            beams: Vec::new(),
+            beam_sets: Vec::new(),
+            default_radius: 0.5,
+            min_length: 0.0001,
+            default_cap: BeamCap::Sphere,
+        }
+    }
+}
+
+impl BeamLatticeData {
+    /// Create new beam lattice data with specified default radius.
+    pub fn new(default_radius: f64) -> Self {
+        Self {
+            default_radius,
+            ..Default::default()
+        }
+    }
+
+    /// Add a vertex and return its index.
+    pub fn add_vertex(&mut self, point: nalgebra::Point3<f64>) -> u32 {
+        let idx = self.vertices.len() as u32;
+        self.vertices.push(point);
+        idx
+    }
+
+    /// Add a beam between two existing vertices.
+    pub fn add_beam(&mut self, v1: u32, v2: u32, radius: f64) -> &mut Self {
+        self.beams.push(Beam::new(v1, v2, radius));
+        self
+    }
+
+    /// Add a beam with the default radius.
+    pub fn add_beam_default(&mut self, v1: u32, v2: u32) -> &mut Self {
+        self.beams.push(Beam::new(v1, v2, self.default_radius));
+        self
+    }
+
+    /// Check if the lattice data is empty.
+    pub fn is_empty(&self) -> bool {
+        self.beams.is_empty()
+    }
+
+    /// Get the number of beams.
+    pub fn beam_count(&self) -> usize {
+        self.beams.len()
+    }
+}
+
+/// A color group for the 3MF Materials Extension.
+///
+/// Color groups allow per-vertex or per-face color assignment using
+/// RGBA values. Each triangle can reference different colors at each vertex
+/// for smooth color gradients.
+#[derive(Debug, Clone)]
+pub struct ColorGroup {
+    /// Resource ID for this color group.
+    pub id: u32,
+    /// Colors in RGBA format (0-255 per channel).
+    pub colors: Vec<(u8, u8, u8, u8)>,
+}
+
+impl ColorGroup {
+    /// Create a new color group with the given resource ID.
+    pub fn new(id: u32) -> Self {
+        Self {
+            id,
+            colors: Vec::new(),
+        }
+    }
+
+    /// Add a color and return its index within this group.
+    pub fn add_color(&mut self, r: u8, g: u8, b: u8, a: u8) -> usize {
+        let idx = self.colors.len();
+        self.colors.push((r, g, b, a));
+        idx
+    }
+
+    /// Add an opaque RGB color.
+    pub fn add_rgb(&mut self, r: u8, g: u8, b: u8) -> usize {
+        self.add_color(r, g, b, 255)
+    }
+}
+
+/// Per-triangle color assignment for ColorGroup.
+#[derive(Debug, Clone)]
+pub struct TriangleColors {
+    /// Color group resource ID (pid).
+    pub color_group_id: u32,
+    /// Color index for vertex 1.
+    pub p1: usize,
+    /// Color index for vertex 2.
+    pub p2: usize,
+    /// Color index for vertex 3.
+    pub p3: usize,
+}
+
+/// Parameters for 3MF export with extensions.
+///
+/// This struct controls which 3MF extensions are enabled and provides data
+/// for each extension type.
+#[derive(Debug, Clone, Default)]
 pub struct ThreeMfExportParams {
-    /// Material zones to include in the export.
+    /// Material zones to include in the export (basematerials extension).
     pub material_zones: Vec<crate::region::MaterialZone>,
     /// Whether to include mesh regions as separate components.
     pub include_regions: bool,
     /// Region map to export (if include_regions is true).
     pub region_map: Option<crate::region::RegionMap>,
-}
 
-impl Default for ThreeMfExportParams {
-    fn default() -> Self {
-        Self {
-            material_zones: Vec::new(),
-            include_regions: false,
-            region_map: None,
-        }
-    }
+    // ---- Beam Lattice Extension ----
+    /// Beam lattice data for the 3MF Beam Lattice Extension.
+    /// When set, exports lattice as beams instead of triangulated mesh.
+    pub beam_lattice: Option<BeamLatticeData>,
+
+    // ---- Color Group Extension ----
+    /// Color groups for per-vertex/per-face coloring.
+    pub color_groups: Vec<ColorGroup>,
+    /// Per-triangle color assignments (maps triangle index to TriangleColors).
+    pub triangle_colors: std::collections::HashMap<usize, TriangleColors>,
+
+    // ---- Production Extension ----
+    /// Whether to generate UUIDs for production extension.
+    /// Requires the `3mf-production` feature.
+    pub generate_uuids: bool,
 }
 
 impl ThreeMfExportParams {
@@ -867,17 +1094,16 @@ impl ThreeMfExportParams {
     pub fn with_materials(zones: Vec<crate::region::MaterialZone>) -> Self {
         Self {
             material_zones: zones,
-            include_regions: false,
-            region_map: None,
+            ..Default::default()
         }
     }
 
     /// Create new export params with regions.
     pub fn with_regions(region_map: crate::region::RegionMap) -> Self {
         Self {
-            material_zones: Vec::new(),
             include_regions: true,
             region_map: Some(region_map),
+            ..Default::default()
         }
     }
 
@@ -885,6 +1111,42 @@ impl ThreeMfExportParams {
     pub fn add_material_zone(mut self, zone: crate::region::MaterialZone) -> Self {
         self.material_zones.push(zone);
         self
+    }
+
+    /// Set beam lattice data for export.
+    pub fn with_beam_lattice(mut self, beam_lattice: BeamLatticeData) -> Self {
+        self.beam_lattice = Some(beam_lattice);
+        self
+    }
+
+    /// Add a color group.
+    pub fn add_color_group(mut self, color_group: ColorGroup) -> Self {
+        self.color_groups.push(color_group);
+        self
+    }
+
+    /// Enable UUID generation for production extension.
+    pub fn with_uuids(mut self, enable: bool) -> Self {
+        self.generate_uuids = enable;
+        self
+    }
+
+    /// Check if any extensions are enabled.
+    pub fn has_extensions(&self) -> bool {
+        !self.material_zones.is_empty()
+            || self.beam_lattice.is_some()
+            || !self.color_groups.is_empty()
+            || self.generate_uuids
+    }
+
+    /// Check if beam lattice extension is enabled.
+    pub fn has_beam_lattice(&self) -> bool {
+        self.beam_lattice.as_ref().map_or(false, |bl| !bl.is_empty())
+    }
+
+    /// Check if color group extension is enabled.
+    pub fn has_color_groups(&self) -> bool {
+        !self.color_groups.is_empty()
     }
 }
 
@@ -1141,6 +1403,402 @@ fn escape_xml(s: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&apos;")
+}
+
+// ============================================================================
+// Extended 3MF Export with All Extensions
+// ============================================================================
+
+/// 3MF namespace constants.
+mod threemf_namespaces {
+    pub const CORE: &str = "http://schemas.microsoft.com/3dmanufacturing/core/2015/02";
+    pub const MATERIALS: &str = "http://schemas.microsoft.com/3dmanufacturing/material/2015/02";
+    pub const BEAMLATTICE: &str = "http://schemas.microsoft.com/3dmanufacturing/beamlattice/2017/02";
+    pub const PRODUCTION: &str = "http://schemas.microsoft.com/3dmanufacturing/production/2015/06";
+}
+
+/// Save mesh to 3MF file with full extension support.
+///
+/// This is the unified export function that supports all 3MF extensions:
+/// - Materials extension (basematerials, colorgroup)
+/// - Beam lattice extension
+/// - Production extension (UUIDs)
+///
+/// # Arguments
+/// * `mesh` - The mesh to save
+/// * `path` - Output file path
+/// * `params` - Export parameters controlling which extensions to use
+///
+/// # Example
+/// ```no_run
+/// use mesh_repair::{Mesh, save_3mf_extended, ThreeMfExportParams, BeamLatticeData};
+///
+/// let mesh = Mesh::new();
+/// let mut params = ThreeMfExportParams::default();
+///
+/// // Add beam lattice data
+/// let mut beam_lattice = BeamLatticeData::new(0.5);
+/// let v1 = beam_lattice.add_vertex(nalgebra::Point3::new(0.0, 0.0, 0.0));
+/// let v2 = beam_lattice.add_vertex(nalgebra::Point3::new(10.0, 0.0, 0.0));
+/// beam_lattice.add_beam_default(v1, v2);
+/// params = params.with_beam_lattice(beam_lattice);
+///
+/// save_3mf_extended(&mesh, std::path::Path::new("output.3mf"), &params).unwrap();
+/// ```
+pub fn save_3mf_extended(mesh: &Mesh, path: &Path, params: &ThreeMfExportParams) -> MeshResult<()> {
+    info!(
+        "Saving mesh to {:?} (3MF extended format, beam_lattice={}, color_groups={}, uuids={})",
+        path,
+        params.has_beam_lattice(),
+        params.has_color_groups(),
+        params.generate_uuids
+    );
+
+    let file = File::create(path).map_err(|e| MeshError::IoWrite {
+        path: path.to_path_buf(),
+        source: e,
+    })?;
+
+    let mut zip = zip::ZipWriter::new(file);
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+
+    // Write content types file
+    zip.start_file("[Content_Types].xml", options)
+        .map_err(|e| MeshError::IoWrite {
+            path: path.to_path_buf(),
+            source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+        })?;
+    zip.write_all(CONTENT_TYPES_XML.as_bytes())
+        .map_err(|e| MeshError::IoWrite {
+            path: path.to_path_buf(),
+            source: e,
+        })?;
+
+    // Write relationships file
+    zip.start_file("_rels/.rels", options)
+        .map_err(|e| MeshError::IoWrite {
+            path: path.to_path_buf(),
+            source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+        })?;
+    zip.write_all(RELS_XML.as_bytes())
+        .map_err(|e| MeshError::IoWrite {
+            path: path.to_path_buf(),
+            source: e,
+        })?;
+
+    // Write the model file
+    zip.start_file("3D/3dmodel.model", options)
+        .map_err(|e| MeshError::IoWrite {
+            path: path.to_path_buf(),
+            source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+        })?;
+
+    let model_xml = generate_3mf_extended_xml(mesh, params);
+    zip.write_all(model_xml.as_bytes())
+        .map_err(|e| MeshError::IoWrite {
+            path: path.to_path_buf(),
+            source: e,
+        })?;
+
+    zip.finish().map_err(|e| MeshError::IoWrite {
+        path: path.to_path_buf(),
+        source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+    })?;
+
+    info!(
+        "Saved mesh to {:?} (vertices={}, faces={}, beams={})",
+        path,
+        mesh.vertices.len(),
+        mesh.faces.len(),
+        params.beam_lattice.as_ref().map_or(0, |bl| bl.beam_count())
+    );
+
+    Ok(())
+}
+
+/// Generate 3MF model XML with all extension support.
+fn generate_3mf_extended_xml(mesh: &Mesh, params: &ThreeMfExportParams) -> String {
+    let has_materials = !params.material_zones.is_empty();
+    let has_beam_lattice = params.has_beam_lattice();
+    let has_color_groups = params.has_color_groups();
+    let has_production = params.generate_uuids;
+
+    let mut xml = String::with_capacity(
+        mesh.vertices.len() * 50
+            + mesh.faces.len() * 50
+            + params.beam_lattice.as_ref().map_or(0, |bl| bl.beams.len() * 80),
+    );
+
+    // Build namespace declarations
+    let mut namespaces = format!("xmlns=\"{}\"", threemf_namespaces::CORE);
+    if has_materials || has_color_groups {
+        namespaces.push_str(&format!(
+            " xmlns:m=\"{}\"",
+            threemf_namespaces::MATERIALS
+        ));
+    }
+    if has_beam_lattice {
+        namespaces.push_str(&format!(
+            " xmlns:b=\"{}\"",
+            threemf_namespaces::BEAMLATTICE
+        ));
+    }
+    if has_production {
+        namespaces.push_str(&format!(
+            " xmlns:p=\"{}\"",
+            threemf_namespaces::PRODUCTION
+        ));
+    }
+
+    // XML header and model element
+    xml.push_str(&format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<model unit=\"millimeter\" {}>\n",
+        namespaces
+    ));
+
+    // Generate build UUID if production extension is enabled
+    #[cfg(feature = "3mf-production")]
+    let build_uuid = if has_production {
+        Some(uuid::Uuid::new_v4().to_string())
+    } else {
+        None
+    };
+    #[cfg(not(feature = "3mf-production"))]
+    let build_uuid: Option<String> = None;
+
+    // Resources section
+    xml.push_str("  <resources>\n");
+
+    // Write basematerials if present
+    if has_materials {
+        xml.push_str("    <basematerials id=\"1\">\n");
+        for zone in &params.material_zones {
+            let (r, g, b) = zone.properties.color.unwrap_or((128, 128, 128));
+            xml.push_str(&format!(
+                "      <base name=\"{}\" displaycolor=\"#{:02X}{:02X}{:02X}\"/>\n",
+                escape_xml(&zone.material_name),
+                r, g, b
+            ));
+        }
+        xml.push_str("    </basematerials>\n");
+    }
+
+    // Write color groups if present
+    if has_color_groups {
+        for cg in &params.color_groups {
+            xml.push_str(&format!("    <m:colorgroup id=\"{}\">\n", cg.id));
+            for (r, g, b, a) in &cg.colors {
+                xml.push_str(&format!(
+                    "      <m:color color=\"#{:02X}{:02X}{:02X}{:02X}\"/>\n",
+                    r, g, b, a
+                ));
+            }
+            xml.push_str("    </m:colorgroup>\n");
+        }
+    }
+
+    // Determine object ID and generate UUID if needed
+    let object_id = if has_materials { 2 } else { 1 };
+
+    #[cfg(feature = "3mf-production")]
+    let object_uuid = if has_production {
+        Some(uuid::Uuid::new_v4().to_string())
+    } else {
+        None
+    };
+    #[cfg(not(feature = "3mf-production"))]
+    let object_uuid: Option<String> = None;
+
+    // Write object element
+    if has_materials {
+        if let Some(ref uuid) = object_uuid {
+            xml.push_str(&format!(
+                "    <object id=\"{}\" type=\"model\" pid=\"1\" pindex=\"0\" p:UUID=\"{}\">\n",
+                object_id, uuid
+            ));
+        } else {
+            xml.push_str(&format!(
+                "    <object id=\"{}\" type=\"model\" pid=\"1\" pindex=\"0\">\n",
+                object_id
+            ));
+        }
+    } else if let Some(ref uuid) = object_uuid {
+        xml.push_str(&format!(
+            "    <object id=\"{}\" type=\"model\" p:UUID=\"{}\">\n",
+            object_id, uuid
+        ));
+    } else {
+        xml.push_str(&format!(
+            "    <object id=\"{}\" type=\"model\">\n",
+            object_id
+        ));
+    }
+
+    // Mesh element
+    xml.push_str("      <mesh>\n");
+
+    // Write mesh vertices
+    xml.push_str("        <vertices>\n");
+    for v in &mesh.vertices {
+        xml.push_str(&format!(
+            "          <vertex x=\"{:.6}\" y=\"{:.6}\" z=\"{:.6}\"/>\n",
+            v.position.x, v.position.y, v.position.z
+        ));
+    }
+    xml.push_str("        </vertices>\n");
+
+    // Write triangles
+    xml.push_str("        <triangles>\n");
+    let face_materials = build_face_material_map(mesh, params);
+    for (face_idx, face) in mesh.faces.iter().enumerate() {
+        // Check for color group assignment
+        if let Some(tri_colors) = params.triangle_colors.get(&face_idx) {
+            xml.push_str(&format!(
+                "          <triangle v1=\"{}\" v2=\"{}\" v3=\"{}\" pid=\"{}\" p1=\"{}\" p2=\"{}\" p3=\"{}\"/>\n",
+                face[0], face[1], face[2],
+                tri_colors.color_group_id,
+                tri_colors.p1, tri_colors.p2, tri_colors.p3
+            ));
+        } else if has_materials {
+            if let Some(mat_idx) = face_materials.get(&(face_idx as u32)) {
+                xml.push_str(&format!(
+                    "          <triangle v1=\"{}\" v2=\"{}\" v3=\"{}\" pid=\"1\" p1=\"{}\"/>\n",
+                    face[0], face[1], face[2], mat_idx
+                ));
+            } else {
+                xml.push_str(&format!(
+                    "          <triangle v1=\"{}\" v2=\"{}\" v3=\"{}\" pid=\"1\" p1=\"0\"/>\n",
+                    face[0], face[1], face[2]
+                ));
+            }
+        } else {
+            xml.push_str(&format!(
+                "          <triangle v1=\"{}\" v2=\"{}\" v3=\"{}\"/>\n",
+                face[0], face[1], face[2]
+            ));
+        }
+    }
+    xml.push_str("        </triangles>\n");
+
+    // Write beam lattice if present
+    if let Some(ref beam_lattice) = params.beam_lattice {
+        xml.push_str(&generate_beamlattice_xml(beam_lattice));
+    }
+
+    xml.push_str("      </mesh>\n");
+    xml.push_str("    </object>\n");
+    xml.push_str("  </resources>\n");
+
+    // Build section
+    if let Some(ref uuid) = build_uuid {
+        xml.push_str(&format!("  <build p:UUID=\"{}\">\n", uuid));
+    } else {
+        xml.push_str("  <build>\n");
+    }
+
+    #[cfg(feature = "3mf-production")]
+    let item_uuid = if has_production {
+        Some(uuid::Uuid::new_v4().to_string())
+    } else {
+        None
+    };
+    #[cfg(not(feature = "3mf-production"))]
+    let item_uuid: Option<String> = None;
+
+    if let Some(ref uuid) = item_uuid {
+        xml.push_str(&format!(
+            "    <item objectid=\"{}\" p:UUID=\"{}\"/>\n",
+            object_id, uuid
+        ));
+    } else {
+        xml.push_str(&format!("    <item objectid=\"{}\"/>\n", object_id));
+    }
+
+    xml.push_str("  </build>\n");
+    xml.push_str("</model>\n");
+
+    xml
+}
+
+/// Generate beam lattice XML fragment.
+fn generate_beamlattice_xml(beam_lattice: &BeamLatticeData) -> String {
+    let mut xml = String::with_capacity(beam_lattice.beams.len() * 80 + 500);
+
+    // Open beamlattice element with attributes
+    xml.push_str(&format!(
+        "        <b:beamlattice radius=\"{:.6}\" minlength=\"{:.6}\" cap=\"{}\"",
+        beam_lattice.default_radius,
+        beam_lattice.min_length,
+        beam_lattice.default_cap.as_3mf_str()
+    ));
+
+    // Check if we need separate vertices (beam lattice uses its own vertex list)
+    if !beam_lattice.vertices.is_empty() {
+        xml.push_str(">\n");
+
+        // Write beam lattice vertices
+        xml.push_str("          <b:vertices>\n");
+        for v in &beam_lattice.vertices {
+            xml.push_str(&format!(
+                "            <b:vertex x=\"{:.6}\" y=\"{:.6}\" z=\"{:.6}\"/>\n",
+                v.x, v.y, v.z
+            ));
+        }
+        xml.push_str("          </b:vertices>\n");
+
+        // Write beams
+        xml.push_str("          <b:beams>\n");
+        for beam in &beam_lattice.beams {
+            // Only include optional attributes if they differ from defaults
+            let mut beam_attrs = format!("v1=\"{}\" v2=\"{}\"", beam.v1, beam.v2);
+
+            // Add radii if they differ from default
+            if (beam.r1 - beam_lattice.default_radius).abs() > 1e-9
+                || (beam.r2 - beam_lattice.default_radius).abs() > 1e-9
+            {
+                beam_attrs.push_str(&format!(" r1=\"{:.6}\" r2=\"{:.6}\"", beam.r1, beam.r2));
+            }
+
+            // Add caps if they differ from default
+            if beam.cap1 != beam_lattice.default_cap {
+                beam_attrs.push_str(&format!(" cap1=\"{}\"", beam.cap1.as_3mf_str()));
+            }
+            if beam.cap2 != beam_lattice.default_cap {
+                beam_attrs.push_str(&format!(" cap2=\"{}\"", beam.cap2.as_3mf_str()));
+            }
+
+            xml.push_str(&format!("            <b:beam {}/>\n", beam_attrs));
+        }
+        xml.push_str("          </b:beams>\n");
+
+        // Write beam sets if present
+        if !beam_lattice.beam_sets.is_empty() {
+            xml.push_str("          <b:beamsets>\n");
+            for beam_set in &beam_lattice.beam_sets {
+                let mut set_attrs = String::new();
+                if let Some(ref name) = beam_set.name {
+                    set_attrs.push_str(&format!(" name=\"{}\"", escape_xml(name)));
+                }
+                if let Some(ref id) = beam_set.identifier {
+                    set_attrs.push_str(&format!(" identifier=\"{}\"", escape_xml(id)));
+                }
+                xml.push_str(&format!("            <b:beamset{}>\n", set_attrs));
+                for &idx in &beam_set.beam_indices {
+                    xml.push_str(&format!("              <b:ref index=\"{}\"/>\n", idx));
+                }
+                xml.push_str("            </b:beamset>\n");
+            }
+            xml.push_str("          </b:beamsets>\n");
+        }
+
+        xml.push_str("        </b:beamlattice>\n");
+    } else {
+        // Empty beam lattice (just close the element)
+        xml.push_str("/>\n");
+    }
+
+    xml
 }
 
 /// Load 3MF file with material zone information.
@@ -2319,5 +2977,201 @@ mod tests {
         assert_eq!(result.triangle_materials[0], Some(0));
         // Face 1 will have material 0 as default since it's not in the region but defaults to first material
         assert_eq!(result.triangle_materials[1], Some(0));
+    }
+
+    #[test]
+    fn test_3mf_extended_with_beam_lattice() {
+        use nalgebra::Point3;
+
+        // Create a simple mesh
+        let mut mesh = Mesh::new();
+        mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(10.0, 0.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(5.0, 10.0, 0.0));
+        mesh.faces.push([0, 1, 2]);
+
+        // Create beam lattice data
+        let mut beam_lattice = BeamLatticeData::new(0.5);
+        let v1 = beam_lattice.add_vertex(Point3::new(0.0, 0.0, 0.0));
+        let v2 = beam_lattice.add_vertex(Point3::new(10.0, 0.0, 0.0));
+        let v3 = beam_lattice.add_vertex(Point3::new(5.0, 10.0, 0.0));
+        let v4 = beam_lattice.add_vertex(Point3::new(5.0, 5.0, 10.0));
+
+        beam_lattice.add_beam_default(v1, v2);
+        beam_lattice.add_beam_default(v2, v3);
+        beam_lattice.add_beam_default(v3, v1);
+        beam_lattice.add_beam_default(v1, v4);
+        beam_lattice.add_beam_default(v2, v4);
+        beam_lattice.add_beam_default(v3, v4);
+
+        let params = ThreeMfExportParams::default()
+            .with_beam_lattice(beam_lattice);
+
+        // Save the 3MF
+        let file = NamedTempFile::with_suffix(".3mf").unwrap();
+        save_3mf_extended(&mesh, file.path(), &params).expect("should save 3mf with beam lattice");
+
+        // Verify the file was created and can be read as a zip
+        let zip_file = std::fs::File::open(file.path()).expect("should open file");
+        let mut archive = zip::ZipArchive::new(zip_file).expect("should be valid zip");
+
+        // Read the model XML
+        let mut model_content = String::new();
+        archive
+            .by_name("3D/3dmodel.model")
+            .expect("should have model file")
+            .read_to_string(&mut model_content)
+            .expect("should read model");
+
+        // Verify beam lattice namespace is present
+        assert!(model_content.contains("xmlns:b="), "should have beam lattice namespace");
+        assert!(model_content.contains("beamlattice"), "should have beamlattice element");
+        assert!(model_content.contains("<b:beam"), "should have beam elements");
+        assert!(model_content.contains("<b:vertex"), "should have vertex elements");
+
+        // Verify beam count - we added 6 beams
+        let beam_count = model_content.matches("<b:beam").count();
+        assert!(beam_count >= 6, "should have at least 6 beams, found {}", beam_count);
+    }
+
+    #[test]
+    fn test_3mf_extended_with_color_groups() {
+        // Create a simple mesh with 2 triangles
+        let mut mesh = Mesh::new();
+        mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(10.0, 0.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(5.0, 10.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(15.0, 10.0, 0.0));
+        mesh.faces.push([0, 1, 2]);
+        mesh.faces.push([1, 3, 2]);
+
+        // Create color group
+        let mut color_group = ColorGroup::new(2);
+        let red = color_group.add_rgb(255, 0, 0);
+        let green = color_group.add_rgb(0, 255, 0);
+        let blue = color_group.add_rgb(0, 0, 255);
+
+        let mut params = ThreeMfExportParams::default()
+            .add_color_group(color_group);
+
+        // Assign colors to first triangle
+        params.triangle_colors.insert(0, TriangleColors {
+            color_group_id: 2,
+            p1: red,
+            p2: green,
+            p3: blue,
+        });
+
+        // Save the 3MF
+        let file = NamedTempFile::with_suffix(".3mf").unwrap();
+        save_3mf_extended(&mesh, file.path(), &params).expect("should save 3mf with color groups");
+
+        // Verify the file content
+        let zip_file = std::fs::File::open(file.path()).expect("should open file");
+        let mut archive = zip::ZipArchive::new(zip_file).expect("should be valid zip");
+
+        let mut model_content = String::new();
+        archive
+            .by_name("3D/3dmodel.model")
+            .expect("should have model file")
+            .read_to_string(&mut model_content)
+            .expect("should read model");
+
+        // Verify color group elements
+        assert!(model_content.contains("xmlns:m="), "should have materials namespace");
+        assert!(model_content.contains("<m:colorgroup"), "should have colorgroup element");
+        assert!(model_content.contains("<m:color"), "should have color elements");
+        assert!(model_content.contains("#FF0000FF"), "should have red color");
+        assert!(model_content.contains("#00FF00FF"), "should have green color");
+        assert!(model_content.contains("#0000FFFF"), "should have blue color");
+
+        // Verify per-vertex color assignment on first triangle
+        assert!(model_content.contains("p1=\"0\" p2=\"1\" p3=\"2\""), "should have per-vertex color indices");
+    }
+
+    #[test]
+    #[cfg(feature = "3mf-production")]
+    fn test_3mf_extended_with_production_uuids() {
+        // Create a simple mesh
+        let mut mesh = Mesh::new();
+        mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(10.0, 0.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(5.0, 10.0, 0.0));
+        mesh.faces.push([0, 1, 2]);
+
+        let params = ThreeMfExportParams::default()
+            .with_uuids(true);
+
+        // Save the 3MF
+        let file = NamedTempFile::with_suffix(".3mf").unwrap();
+        save_3mf_extended(&mesh, file.path(), &params).expect("should save 3mf with UUIDs");
+
+        // Verify the file content
+        let zip_file = std::fs::File::open(file.path()).expect("should open file");
+        let mut archive = zip::ZipArchive::new(zip_file).expect("should be valid zip");
+
+        let mut model_content = String::new();
+        archive
+            .by_name("3D/3dmodel.model")
+            .expect("should have model file")
+            .read_to_string(&mut model_content)
+            .expect("should read model");
+
+        // Verify production namespace and UUID attributes
+        assert!(model_content.contains("xmlns:p="), "should have production namespace");
+        assert!(model_content.contains("p:UUID="), "should have UUID attributes");
+
+        // Count UUID occurrences - should have at least 3 (build, object, item)
+        let uuid_count = model_content.matches("p:UUID=").count();
+        assert!(uuid_count >= 3, "should have at least 3 UUIDs, found {}", uuid_count);
+    }
+
+    #[test]
+    fn test_beam_lattice_from_cubic_generation() {
+        use crate::lattice::{generate_lattice, LatticeParams};
+        use nalgebra::Point3;
+
+        // Generate a small cubic lattice with beam data preservation
+        let params = LatticeParams::cubic(5.0)
+            .with_beam_export(true);
+
+        let bounds = (
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(10.0, 10.0, 10.0),
+        );
+
+        let result = generate_lattice(&params, bounds);
+
+        // Should have beam data
+        assert!(result.beam_data.is_some(), "should preserve beam data");
+
+        let beam_data = result.beam_data.unwrap();
+        assert!(!beam_data.vertices.is_empty(), "should have vertices");
+        assert!(!beam_data.beams.is_empty(), "should have beams");
+
+        // For a 2x2x2 cell cubic lattice, we should have:
+        // - 3x3x3 = 27 vertices (corners)
+        // - 3 struts per direction per layer = significant number of beams
+        assert!(beam_data.vertices.len() >= 8, "should have at least corner vertices");
+        assert!(beam_data.beams.len() >= 12, "should have at least edge beams");
+
+        // Export to 3MF with beam lattice
+        let mut mesh = Mesh::new();
+        mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(10.0, 0.0, 0.0));
+        mesh.vertices.push(Vertex::from_coords(5.0, 10.0, 0.0));
+        mesh.faces.push([0, 1, 2]);
+
+        let export_params = ThreeMfExportParams::default()
+            .with_beam_lattice(beam_data);
+
+        let file = NamedTempFile::with_suffix(".3mf").unwrap();
+        save_3mf_extended(&mesh, file.path(), &export_params)
+            .expect("should export lattice with beam data");
+
+        // Verify file is valid
+        let zip_file = std::fs::File::open(file.path()).expect("should open file");
+        let archive = zip::ZipArchive::new(zip_file).expect("should be valid zip");
+        assert!(archive.len() >= 3, "should have required 3MF files");
     }
 }
