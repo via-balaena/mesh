@@ -115,7 +115,7 @@ mod stl_conformance {
         save_mesh(&mesh, file.path()).expect("Should save small STL");
 
         let reloaded = load_mesh(file.path()).expect("Should reload");
-        let (min, max) = reloaded.bounds().unwrap();
+        let (_min, max) = reloaded.bounds().unwrap();
 
         // STL uses f32 internally, so precision is limited
         assert!(
