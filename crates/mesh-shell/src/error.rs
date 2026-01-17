@@ -1,3 +1,7 @@
+// Allow unused_assignments lint for error struct fields that are used in thiserror Display macros
+// but appear as "never read" to the compiler. This is a false positive in newer Rust versions.
+#![allow(unused_assignments)]
+
 //! Error types for shell operations with rich diagnostics.
 //!
 //! This module provides comprehensive error handling with:
