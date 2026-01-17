@@ -7,7 +7,7 @@ use colored::Colorize;
 use mesh_repair::{Mesh, PrinterConfig};
 use serde::Serialize;
 
-use crate::{output, Cli, OutputFormat};
+use crate::{Cli, OutputFormat, output};
 
 #[derive(Serialize)]
 struct ValidationResult {
@@ -35,7 +35,8 @@ struct PrintabilityInfo {
 }
 
 pub fn run(input: &Path, check_printable: bool, min_thickness: f64, cli: &Cli) -> Result<()> {
-    let mesh = Mesh::load(input).with_context(|| format!("Failed to load mesh from {:?}", input))?;
+    let mesh =
+        Mesh::load(input).with_context(|| format!("Failed to load mesh from {:?}", input))?;
 
     let report = mesh.validate();
     let mut issues = Vec::new();
@@ -111,17 +112,9 @@ pub fn run(input: &Path, check_printable: bool, min_thickness: f64, cli: &Cli) -
                 println!("  {}: {}", "File".cyan(), input.display());
 
                 if result.valid {
-                    println!(
-                        "  {}: {}",
-                        "Status".cyan(),
-                        "Valid".green().bold()
-                    );
+                    println!("  {}: {}", "Status".cyan(), "Valid".green().bold());
                 } else {
-                    println!(
-                        "  {}: {}",
-                        "Status".cyan(),
-                        "Issues found".red().bold()
-                    );
+                    println!("  {}: {}", "Status".cyan(), "Issues found".red().bold());
                 }
 
                 if !result.issues.is_empty() {
@@ -149,18 +142,10 @@ pub fn run(input: &Path, check_printable: bool, min_thickness: f64, cli: &Cli) -
                     );
                     println!("  {}: {:.0}%", "Score".cyan(), p.score * 100.0);
                     if p.thin_walls > 0 {
-                        println!(
-                            "  {}: {} regions",
-                            "Thin walls".yellow(),
-                            p.thin_walls
-                        );
+                        println!("  {}: {} regions", "Thin walls".yellow(), p.thin_walls);
                     }
                     if p.overhangs > 0 {
-                        println!(
-                            "  {}: {} regions",
-                            "Overhangs".yellow(),
-                            p.overhangs
-                        );
+                        println!("  {}: {} regions", "Overhangs".yellow(), p.overhangs);
                     }
                     if p.support_volume > 0.0 {
                         println!(

@@ -312,7 +312,8 @@ fn morph_rbf(mesh: &Mesh, params: &MorphParams, kernel: RbfKernel) -> MeshResult
     for i in 0..n {
         for j in 0..n {
             let r = (params.constraints[i].source - params.constraints[j].source).norm();
-            let value = evaluate_kernel(kernel, r, params.smoothness) * params.constraints[i].weight;
+            let value =
+                evaluate_kernel(kernel, r, params.smoothness) * params.constraints[i].weight;
             matrix[(i, j)] = value;
         }
         // Add small regularization to diagonal for numerical stability
@@ -356,15 +357,21 @@ fn morph_rbf(mesh: &Mesh, params: &MorphParams, kernel: RbfKernel) -> MeshResult
 
     // Solve the systems using SVD pseudoinverse for better numerical stability
     let epsilon = 1e-10;
-    let wx = svd.solve(&dx, epsilon).map_err(|_| MeshError::RepairFailed {
-        details: "Failed to solve RBF system (degenerate constraint configuration)".to_string(),
-    })?;
-    let wy = svd.solve(&dy, epsilon).map_err(|_| MeshError::RepairFailed {
-        details: "Failed to solve RBF system (degenerate constraint configuration)".to_string(),
-    })?;
-    let wz = svd.solve(&dz, epsilon).map_err(|_| MeshError::RepairFailed {
-        details: "Failed to solve RBF system (degenerate constraint configuration)".to_string(),
-    })?;
+    let wx = svd
+        .solve(&dx, epsilon)
+        .map_err(|_| MeshError::RepairFailed {
+            details: "Failed to solve RBF system (degenerate constraint configuration)".to_string(),
+        })?;
+    let wy = svd
+        .solve(&dy, epsilon)
+        .map_err(|_| MeshError::RepairFailed {
+            details: "Failed to solve RBF system (degenerate constraint configuration)".to_string(),
+        })?;
+    let wz = svd
+        .solve(&dz, epsilon)
+        .map_err(|_| MeshError::RepairFailed {
+            details: "Failed to solve RBF system (degenerate constraint configuration)".to_string(),
+        })?;
 
     // Calculate original volume for comparison
     let original_volume = mesh.volume();
@@ -378,9 +385,10 @@ fn morph_rbf(mesh: &Mesh, params: &MorphParams, kernel: RbfKernel) -> MeshResult
     for (idx, vertex) in morphed.vertices.iter_mut().enumerate() {
         // Check region mask
         if let Some(ref mask) = params.region_mask
-            && !mask.contains(&(idx as u32)) {
-                continue;
-            }
+            && !mask.contains(&(idx as u32))
+        {
+            continue;
+        }
 
         let p = vertex.position;
 
@@ -568,9 +576,10 @@ fn morph_ffd(mesh: &Mesh, params: &MorphParams) -> MeshResult<MorphResult> {
     for (idx, vertex) in morphed.vertices.iter_mut().enumerate() {
         // Check region mask
         if let Some(ref mask) = params.region_mask
-            && !mask.contains(&(idx as u32)) {
-                continue;
-            }
+            && !mask.contains(&(idx as u32))
+        {
+            continue;
+        }
 
         let p = vertex.position;
 
@@ -763,7 +772,11 @@ mod tests {
         let result = morph_mesh(&mesh, &params).unwrap();
 
         // With identity constraints, displacement should be minimal
-        assert!(result.max_displacement < 0.1, "Max displacement: {}", result.max_displacement);
+        assert!(
+            result.max_displacement < 0.1,
+            "Max displacement: {}",
+            result.max_displacement
+        );
     }
 
     #[test]
@@ -785,7 +798,12 @@ mod tests {
         for (i, vertex) in result.mesh.vertices.iter().enumerate() {
             let orig = &mesh.vertices[i];
             let dx = vertex.position.x - orig.position.x;
-            assert!((dx - 5.0).abs() < 0.1, "Vertex {} X displacement: {}", i, dx);
+            assert!(
+                (dx - 5.0).abs() < 0.1,
+                "Vertex {} X displacement: {}",
+                i,
+                dx
+            );
         }
 
         // Volume should be approximately preserved
@@ -852,10 +870,7 @@ mod tests {
         // Scale the mesh by moving control points outward
         let constraints = vec![
             Constraint::displacement(Point3::new(0.0, 0.0, 0.0), Vector3::new(-2.0, -2.0, -2.0)),
-            Constraint::displacement(
-                Point3::new(10.0, 10.0, 10.0),
-                Vector3::new(2.0, 2.0, 2.0),
-            ),
+            Constraint::displacement(Point3::new(10.0, 10.0, 10.0), Vector3::new(2.0, 2.0, 2.0)),
         ];
 
         let params = MorphParams::ffd_with_resolution(3, 3, 3).with_constraints(constraints);
@@ -916,7 +931,10 @@ mod tests {
         )];
         let params = MorphParams::rbf().with_constraints(constraints);
 
-        assert!(matches!(morph_mesh(&mesh, &params), Err(MeshError::EmptyMesh { .. })));
+        assert!(matches!(
+            morph_mesh(&mesh, &params),
+            Err(MeshError::EmptyMesh { .. })
+        ));
     }
 
     #[test]
@@ -960,11 +978,7 @@ mod tests {
 
         // Multiple well-separated constraints for numerical stability
         let constraints = vec![
-            Constraint::weighted(
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(0.0, 0.0, 10.0),
-                2.0,
-            ),
+            Constraint::weighted(Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 10.0), 2.0),
             Constraint::weighted(
                 Point3::new(10.0, 0.0, 0.0),
                 Point3::new(10.0, 0.0, 5.0),

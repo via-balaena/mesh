@@ -235,7 +235,11 @@ pub fn oriented_bounding_box(mesh: &Mesh) -> OrientedBoundingBox {
 // ============================================================================
 
 /// Extract a cross-section of the mesh at a given plane.
-pub fn cross_section(mesh: &Mesh, plane_point: Point3<f64>, plane_normal: Vector3<f64>) -> CrossSection {
+pub fn cross_section(
+    mesh: &Mesh,
+    plane_point: Point3<f64>,
+    plane_normal: Vector3<f64>,
+) -> CrossSection {
     let normal = plane_normal.normalize();
     let mut segments: Vec<(Point3<f64>, Point3<f64>)> = Vec::new();
 
@@ -619,7 +623,11 @@ impl Mesh {
     }
 
     /// Extract a cross-section at a given plane.
-    pub fn cross_section(&self, plane_point: Point3<f64>, plane_normal: Vector3<f64>) -> CrossSection {
+    pub fn cross_section(
+        &self,
+        plane_point: Point3<f64>,
+        plane_normal: Vector3<f64>,
+    ) -> CrossSection {
         cross_section(self, plane_point, plane_normal)
     }
 
@@ -677,17 +685,23 @@ mod tests {
         // 12 triangles for 6 faces
         let faces = [
             // Bottom
-            [0, 1, 2], [0, 2, 3],
+            [0, 1, 2],
+            [0, 2, 3],
             // Top
-            [4, 6, 5], [4, 7, 6],
+            [4, 6, 5],
+            [4, 7, 6],
             // Front
-            [0, 5, 1], [0, 4, 5],
+            [0, 5, 1],
+            [0, 4, 5],
             // Back
-            [2, 7, 3], [2, 6, 7],
+            [2, 7, 3],
+            [2, 6, 7],
             // Left
-            [0, 3, 7], [0, 7, 4],
+            [0, 3, 7],
+            [0, 7, 4],
             // Right
-            [1, 5, 6], [1, 6, 2],
+            [1, 5, 6],
+            [1, 6, 2],
         ];
 
         for f in faces {
@@ -746,13 +760,7 @@ mod tests {
     #[test]
     fn test_cross_sections_multiple() {
         let mesh = create_test_cube();
-        let sections = cross_sections(
-            &mesh,
-            Point3::new(0.0, 0.0, -5.0),
-            Vector3::z(),
-            3,
-            5.0,
-        );
+        let sections = cross_sections(&mesh, Point3::new(0.0, 0.0, -5.0), Vector3::z(), 3, 5.0);
 
         assert_eq!(sections.len(), 3);
     }

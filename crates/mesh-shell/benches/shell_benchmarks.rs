@@ -6,9 +6,9 @@
 //! 1. First run: cargo bench -p mesh-shell -- --save-baseline main
 //! 2. After changes: cargo bench -p mesh-shell -- --baseline main
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use mesh_repair::{Mesh, Vertex};
-use mesh_shell::{generate_shell, ShellParams, WallGenerationMethod};
+use mesh_shell::{ShellParams, WallGenerationMethod, generate_shell};
 
 // =============================================================================
 // Test Mesh Generation
@@ -19,10 +19,14 @@ fn create_cube() -> Mesh {
     let mut mesh = Mesh::new();
 
     let verts = [
-        [-0.5, -0.5, -0.5], [0.5, -0.5, -0.5],
-        [0.5, 0.5, -0.5], [-0.5, 0.5, -0.5],
-        [-0.5, -0.5, 0.5], [0.5, -0.5, 0.5],
-        [0.5, 0.5, 0.5], [-0.5, 0.5, 0.5],
+        [-0.5, -0.5, -0.5],
+        [0.5, -0.5, -0.5],
+        [0.5, 0.5, -0.5],
+        [-0.5, 0.5, -0.5],
+        [-0.5, -0.5, 0.5],
+        [0.5, -0.5, 0.5],
+        [0.5, 0.5, 0.5],
+        [-0.5, 0.5, 0.5],
     ];
 
     for v in &verts {
@@ -30,12 +34,18 @@ fn create_cube() -> Mesh {
     }
 
     let faces = [
-        [0, 1, 2], [0, 2, 3],
-        [4, 6, 5], [4, 7, 6],
-        [0, 4, 5], [0, 5, 1],
-        [2, 6, 7], [2, 7, 3],
-        [0, 3, 7], [0, 7, 4],
-        [1, 5, 6], [1, 6, 2],
+        [0, 1, 2],
+        [0, 2, 3],
+        [4, 6, 5],
+        [4, 7, 6],
+        [0, 4, 5],
+        [0, 5, 1],
+        [2, 6, 7],
+        [2, 7, 3],
+        [0, 3, 7],
+        [0, 7, 4],
+        [1, 5, 6],
+        [1, 6, 2],
     ];
 
     for f in &faces {
@@ -54,22 +64,47 @@ fn create_sphere(subdivisions: u32) -> Mesh {
     let b = 1.0 / phi;
 
     let ico_verts = [
-        [0.0, b, -a], [b, a, 0.0], [-b, a, 0.0], [0.0, b, a],
-        [0.0, -b, a], [-a, 0.0, b], [0.0, -b, -a], [a, 0.0, -b],
-        [a, 0.0, b], [-a, 0.0, -b], [b, -a, 0.0], [-b, -a, 0.0],
+        [0.0, b, -a],
+        [b, a, 0.0],
+        [-b, a, 0.0],
+        [0.0, b, a],
+        [0.0, -b, a],
+        [-a, 0.0, b],
+        [0.0, -b, -a],
+        [a, 0.0, -b],
+        [a, 0.0, b],
+        [-a, 0.0, -b],
+        [b, -a, 0.0],
+        [-b, -a, 0.0],
     ];
 
     for v in &ico_verts {
         let len = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
-        mesh.vertices.push(Vertex::from_coords(v[0] / len, v[1] / len, v[2] / len));
+        mesh.vertices
+            .push(Vertex::from_coords(v[0] / len, v[1] / len, v[2] / len));
     }
 
     let ico_faces: [[u32; 3]; 20] = [
-        [0, 1, 2], [3, 2, 1], [3, 4, 5], [3, 8, 4],
-        [0, 6, 7], [0, 9, 6], [4, 10, 11], [6, 11, 10],
-        [2, 5, 9], [11, 9, 5], [1, 7, 8], [10, 8, 7],
-        [3, 5, 2], [3, 1, 8], [0, 2, 9], [0, 7, 1],
-        [6, 9, 11], [6, 10, 7], [4, 11, 5], [4, 8, 10],
+        [0, 1, 2],
+        [3, 2, 1],
+        [3, 4, 5],
+        [3, 8, 4],
+        [0, 6, 7],
+        [0, 9, 6],
+        [4, 10, 11],
+        [6, 11, 10],
+        [2, 5, 9],
+        [11, 9, 5],
+        [1, 7, 8],
+        [10, 8, 7],
+        [3, 5, 2],
+        [3, 1, 8],
+        [0, 2, 9],
+        [0, 7, 1],
+        [6, 9, 11],
+        [6, 10, 7],
+        [4, 11, 5],
+        [4, 8, 10],
     ];
 
     for f in &ico_faces {
@@ -159,9 +194,7 @@ fn bench_shell_generation(c: &mut Criterion) {
             group.bench_with_input(
                 BenchmarkId::new(format!("shell_t{}", thickness), name),
                 &(mesh, &params),
-                |b, (mesh, params)| {
-                    b.iter(|| generate_shell(black_box(mesh), black_box(params)))
-                },
+                |b, (mesh, params)| b.iter(|| generate_shell(black_box(mesh), black_box(params))),
             );
         }
     }

@@ -29,8 +29,8 @@
 //! println!("Estimated time: {:.1}s", estimate.estimated_seconds);
 //! ```
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 /// Progress information passed to callbacks.

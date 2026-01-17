@@ -38,8 +38,8 @@
 //! }
 //! ```
 
-use crate::thickness::analyze_thickness;
 use crate::Mesh;
+use crate::thickness::analyze_thickness;
 use nalgebra::{Point3, UnitQuaternion, Vector3};
 use std::f64::consts::PI;
 
@@ -170,7 +170,9 @@ impl PrintValidation {
 
     /// Check if only warnings exist (printable but may have issues).
     pub fn has_warnings(&self) -> bool {
-        self.issues.iter().any(|i| matches!(i.severity, IssueSeverity::Warning))
+        self.issues
+            .iter()
+            .any(|i| matches!(i.severity, IssueSeverity::Warning))
     }
 
     /// Get critical issues that prevent printing.
@@ -379,13 +381,16 @@ pub fn validate_for_printing(mesh: &Mesh, config: &PrinterConfig) -> PrintValida
     }
 
     // Check wall thickness
-    let thickness_result = analyze_thickness(mesh, &crate::thickness::ThicknessParams {
-        min_thickness: config.min_wall_thickness,
-        max_ray_distance: 50.0,
-        epsilon: 1e-8,
-        max_regions: 100, // Limit for faster validation
-        require_normals: false,
-    });
+    let thickness_result = analyze_thickness(
+        mesh,
+        &crate::thickness::ThicknessParams {
+            min_thickness: config.min_wall_thickness,
+            max_ray_distance: 50.0,
+            epsilon: 1e-8,
+            max_regions: 100, // Limit for faster validation
+            require_normals: false,
+        },
+    );
 
     for region in &thickness_result.thin_regions {
         // Find faces containing this vertex
@@ -467,7 +472,9 @@ pub fn validate_for_printing(mesh: &Mesh, config: &PrinterConfig) -> PrintValida
 
     // Calculate overall score
     let score = calculate_printability_score(&issues);
-    let printable = !issues.iter().any(|i| matches!(i.severity, IssueSeverity::Critical));
+    let printable = !issues
+        .iter()
+        .any(|i| matches!(i.severity, IssueSeverity::Critical));
 
     // Estimate print time (very rough)
     let volume = estimate_mesh_volume(mesh).abs();
@@ -612,10 +619,7 @@ fn count_boundary_edges(mesh: &Mesh) -> usize {
     edge_count.values().filter(|&&c| c == 1).count()
 }
 
-fn detect_overhangs(
-    mesh: &Mesh,
-    max_angle: f64,
-) -> (Vec<u32>, Vec<OverhangRegion>) {
+fn detect_overhangs(mesh: &Mesh, max_angle: f64) -> (Vec<u32>, Vec<OverhangRegion>) {
     let up = Vector3::new(0.0, 0.0, 1.0);
     let threshold = (max_angle * PI / 180.0).cos();
     let mut overhang_faces = Vec::new();
@@ -757,11 +761,7 @@ fn rotate_mesh(mesh: &Mesh, rotation: &UnitQuaternion<f64>) -> Mesh {
     result
 }
 
-fn evaluate_orientation(
-    mesh: &Mesh,
-    config: &PrinterConfig,
-    params: &OrientParams,
-) -> f64 {
+fn evaluate_orientation(mesh: &Mesh, config: &PrinterConfig, params: &OrientParams) -> f64 {
     let (support_volume, overhang_area) = estimate_support_metrics(mesh, config);
     let bbox = compute_bounding_box(mesh);
     let height = bbox.1.z - bbox.0.z;
@@ -776,10 +776,8 @@ fn evaluate_orientation(
     let quality_score = 1.0; // Could consider layer orientation for quality
 
     // Weighted sum
-    let total_weight = params.support_weight
-        + params.overhang_weight
-        + params.time_weight
-        + params.quality_weight;
+    let total_weight =
+        params.support_weight + params.overhang_weight + params.time_weight + params.quality_weight;
 
     (params.support_weight * support_score
         + params.overhang_weight * overhang_score
@@ -899,10 +897,14 @@ mod tests {
     #[test]
     fn test_auto_orient() {
         let mesh = create_test_tetrahedron();
-        let result = auto_orient_for_printing(&mesh, &PrinterConfig::fdm_default(), &OrientParams {
-            samples: 10, // Fewer samples for faster test
-            ..Default::default()
-        });
+        let result = auto_orient_for_printing(
+            &mesh,
+            &PrinterConfig::fdm_default(),
+            &OrientParams {
+                samples: 10, // Fewer samples for faster test
+                ..Default::default()
+            },
+        );
 
         assert!(!result.mesh.vertices.is_empty());
         assert!(result.score >= 0.0 && result.score <= 1.0);
@@ -929,10 +931,12 @@ mod tests {
         let result = validate_for_printing(&mesh, &PrinterConfig::fdm_default());
 
         // Should have a build volume issue
-        assert!(result
-            .issues
-            .iter()
-            .any(|i| i.issue_type == PrintIssueType::ExceedsBuildVolume));
+        assert!(
+            result
+                .issues
+                .iter()
+                .any(|i| i.issue_type == PrintIssueType::ExceedsBuildVolume)
+        );
     }
 
     #[test]

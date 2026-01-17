@@ -90,27 +90,25 @@ mod shell;
 pub use error::{ShellError, ShellResult};
 
 // Builder API (recommended)
-pub use builder::{ShellBuilder, ShellBuildResult};
+pub use builder::{ShellBuildResult, ShellBuilder};
 
 // SDF offset
-pub use offset::{
-    apply_sdf_offset, SdfOffsetParams, SdfOffsetResult, SdfOffsetStats,
-};
+pub use offset::{SdfOffsetParams, SdfOffsetResult, SdfOffsetStats, apply_sdf_offset};
 
 // Shell generation (rename to avoid conflict with error::ShellResult)
 pub use shell::{
-    generate_shell, generate_shell_no_validation, generate_shell_with_progress,
-    ShellParams, ShellResult as ShellGenerationResult, WallGenerationMethod,
+    ShellParams, ShellResult as ShellGenerationResult, WallGenerationMethod, generate_shell,
+    generate_shell_no_validation, generate_shell_with_progress,
 };
 
 // Shell validation and repair
 pub use shell::{
-    validate_shell, validate_and_repair_shell, repair_shell,
-    ShellValidationResult, ShellIssue, ShellRepairResult,
+    ShellIssue, ShellRepairResult, ShellValidationResult, repair_shell, validate_and_repair_shell,
+    validate_shell,
 };
 
 // Rim generation and boundary analysis
 pub use shell::{
-    analyze_boundary, generate_rim, generate_rim_advanced, generate_rim_for_sdf_shell,
-    validate_boundary_for_rim, BoundaryAnalysis, BoundaryLoop, RimResult,
+    BoundaryAnalysis, BoundaryLoop, RimResult, analyze_boundary, generate_rim,
+    generate_rim_advanced, generate_rim_for_sdf_shell, validate_boundary_for_rim,
 };

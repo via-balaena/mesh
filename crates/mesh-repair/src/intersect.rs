@@ -163,7 +163,10 @@ impl Aabb {
 /// let result = detect_self_intersections(&mesh, &IntersectionParams::default());
 /// assert!(result.is_clean());
 /// ```
-pub fn detect_self_intersections(mesh: &Mesh, params: &IntersectionParams) -> SelfIntersectionResult {
+pub fn detect_self_intersections(
+    mesh: &Mesh,
+    params: &IntersectionParams,
+) -> SelfIntersectionResult {
     let face_count = mesh.faces.len();
 
     if face_count < 2 {
@@ -227,9 +230,10 @@ pub fn detect_self_intersections(mesh: &Mesh, params: &IntersectionParams) -> Se
 
                 // Skip adjacent triangles if requested
                 if let Some(ref adj) = adjacency
-                    && adj[i].contains(&(j as u32)) {
-                        continue;
-                    }
+                    && adj[i].contains(&(j as u32))
+                {
+                    continue;
+                }
 
                 // Perform actual triangle-triangle intersection test
                 if triangles_intersect(&triangles[i], &triangles[j], params.epsilon) {
@@ -261,10 +265,7 @@ pub fn detect_self_intersections(mesh: &Mesh, params: &IntersectionParams) -> Se
     }
 
     if final_count > 0 {
-        warn!(
-            "Found {} self-intersecting triangle pair(s)",
-            final_count
-        );
+        warn!("Found {} self-intersecting triangle pair(s)", final_count);
     } else {
         info!("No self-intersections found");
     }
@@ -327,7 +328,8 @@ fn triangles_intersect(t1: &Triangle, t2: &Triangle, epsilon: f64) -> bool {
 
     // Check if triangles are coplanar (or nearly so)
     let cross_normals = n1.cross(&n2);
-    let is_coplanar = cross_normals.norm_squared() < epsilon * epsilon * n1.norm_squared() * n2.norm_squared();
+    let is_coplanar =
+        cross_normals.norm_squared() < epsilon * epsilon * n1.norm_squared() * n2.norm_squared();
 
     if is_coplanar {
         // For coplanar triangles, use 2D SAT test
@@ -336,19 +338,19 @@ fn triangles_intersect(t1: &Triangle, t2: &Triangle, epsilon: f64) -> bool {
         // Test separation using edges of triangle 1 (perpendicular in-plane)
         for edge in &edges1 {
             let axis = n1.cross(edge);
-            if axis.norm_squared() > epsilon * epsilon
-                && separated_by_axis(&axis, t1, t2, epsilon) {
-                    return false;
-                }
+            if axis.norm_squared() > epsilon * epsilon && separated_by_axis(&axis, t1, t2, epsilon)
+            {
+                return false;
+            }
         }
 
         // Test separation using edges of triangle 2 (perpendicular in-plane)
         for edge in &edges2 {
             let axis = n2.cross(edge);
-            if axis.norm_squared() > epsilon * epsilon
-                && separated_by_axis(&axis, t1, t2, epsilon) {
-                    return false;
-                }
+            if axis.norm_squared() > epsilon * epsilon && separated_by_axis(&axis, t1, t2, epsilon)
+            {
+                return false;
+            }
         }
 
         // No separating axis in-plane - coplanar triangles overlap
@@ -369,10 +371,10 @@ fn triangles_intersect(t1: &Triangle, t2: &Triangle, epsilon: f64) -> bool {
     for e1 in &edges1 {
         for e2 in &edges2 {
             let axis = e1.cross(e2);
-            if axis.norm_squared() > epsilon * epsilon
-                && separated_by_axis(&axis, t1, t2, epsilon) {
-                    return false;
-                }
+            if axis.norm_squared() > epsilon * epsilon && separated_by_axis(&axis, t1, t2, epsilon)
+            {
+                return false;
+            }
         }
     }
 

@@ -356,11 +356,7 @@ impl Triangle {
 
     /// Get the three edges as (start, end) pairs.
     pub fn edges(&self) -> [(Point3<f64>, Point3<f64>); 3] {
-        [
-            (self.v0, self.v1),
-            (self.v1, self.v2),
-            (self.v2, self.v0),
-        ]
+        [(self.v0, self.v1), (self.v1, self.v2), (self.v2, self.v0)]
     }
 
     /// Compute the lengths of the three edges.
@@ -613,7 +609,11 @@ mod tests {
         );
         // For equilateral: aspect ratio = edge / altitude = 2 / sqrt(3) ≈ 1.1547
         let ar = tri.aspect_ratio();
-        assert!(ar > 1.1 && ar < 1.2, "Equilateral aspect ratio should be ~1.15, got {}", ar);
+        assert!(
+            ar > 1.1 && ar < 1.2,
+            "Equilateral aspect ratio should be ~1.15, got {}",
+            ar
+        );
     }
 
     #[test]
@@ -626,7 +626,11 @@ mod tests {
         );
         let ar = tri.aspect_ratio();
         // Should be very high for thin triangles
-        assert!(ar > 100.0, "Thin triangle should have high aspect ratio, got {}", ar);
+        assert!(
+            ar > 100.0,
+            "Thin triangle should have high aspect ratio, got {}",
+            ar
+        );
     }
 
     #[test]
@@ -860,7 +864,8 @@ mod tests {
         mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 0.0)); // 0
         mesh.vertices.push(Vertex::from_coords(1.0, 0.0, 0.0)); // 1
         mesh.vertices.push(Vertex::from_coords(0.5, 0.866025, 0.0)); // 2 (approx sqrt(3)/2)
-        mesh.vertices.push(Vertex::from_coords(0.5, 0.288675, 0.816497)); // 3 (apex)
+        mesh.vertices
+            .push(Vertex::from_coords(0.5, 0.288675, 0.816497)); // 3 (apex)
 
         // Faces with outward normals (CCW from outside)
         mesh.faces.push([0, 2, 1]); // Bottom face

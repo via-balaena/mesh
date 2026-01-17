@@ -66,7 +66,10 @@ impl std::fmt::Display for ShellErrorCode {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ShellRecoverySuggestion {
     /// Reduce grid resolution.
-    ReduceGridResolution { current: [usize; 3], suggested: [usize; 3] },
+    ReduceGridResolution {
+        current: [usize; 3],
+        suggested: [usize; 3],
+    },
     /// Use adaptive grid.
     UseAdaptiveGrid,
     /// Repair input mesh first.
@@ -103,7 +106,11 @@ impl std::fmt::Display for ShellRecoverySuggestion {
                 )
             }
             ShellRecoverySuggestion::SimplifyMesh { target_faces } => {
-                write!(f, "Simplify mesh to ~{} faces using decimation", target_faces)
+                write!(
+                    f,
+                    "Simplify mesh to ~{} faces using decimation",
+                    target_faces
+                )
             }
             ShellRecoverySuggestion::None => {
                 write!(f, "No specific suggestion available")
@@ -119,7 +126,9 @@ pub enum ShellError {
     #[error("input mesh is empty")]
     #[diagnostic(
         code(shell::input::empty),
-        help("The input mesh must have at least one vertex and one face. Check that the mesh was loaded correctly.")
+        help(
+            "The input mesh must have at least one vertex and one face. Check that the mesh was loaded correctly."
+        )
     )]
     EmptyMesh,
 
@@ -140,7 +149,9 @@ pub enum ShellError {
     #[error("isosurface extraction produced empty mesh")]
     #[diagnostic(
         code(shell::isosurface::empty),
-        help("The shell thickness may be larger than the mesh dimensions, or the mesh may have degenerate geometry. Try reducing thickness or repairing the mesh.")
+        help(
+            "The shell thickness may be larger than the mesh dimensions, or the mesh may have degenerate geometry. Try reducing thickness or repairing the mesh."
+        )
     )]
     EmptyIsosurface,
 
@@ -148,7 +159,9 @@ pub enum ShellError {
     #[error("failed to transfer vertex tags: {details}")]
     #[diagnostic(
         code(shell::tags::transfer_failed),
-        help("Tag transfer requires a well-formed source mesh. Ensure the input mesh has valid vertex indices.")
+        help(
+            "Tag transfer requires a well-formed source mesh. Ensure the input mesh has valid vertex indices."
+        )
     )]
     TagTransferFailed { details: String },
 
@@ -167,7 +180,9 @@ pub enum ShellError {
     #[error("SDF computation failed: {details}")]
     #[diagnostic(
         code(shell::sdf::failed),
-        help("The mesh may have degenerate triangles or non-manifold geometry. Run `mesh repair` first.")
+        help(
+            "The mesh may have degenerate triangles or non-manifold geometry. Run `mesh repair` first."
+        )
     )]
     SdfFailed {
         details: String,
@@ -238,9 +253,9 @@ impl ShellError {
                 suggested: 1.0,
             },
             ShellError::TagTransferFailed { .. } => ShellRecoverySuggestion::RepairInputMesh,
-            ShellError::ShellGenerationFailed { suggestion, .. } => {
-                suggestion.clone().unwrap_or(ShellRecoverySuggestion::RepairInputMesh)
-            }
+            ShellError::ShellGenerationFailed { suggestion, .. } => suggestion
+                .clone()
+                .unwrap_or(ShellRecoverySuggestion::RepairInputMesh),
             ShellError::SdfFailed { .. } => ShellRecoverySuggestion::RepairInputMesh,
             ShellError::InvalidParams { .. } => ShellRecoverySuggestion::None,
             ShellError::RimGenerationFailed { .. } => ShellRecoverySuggestion::RepairInputMesh,

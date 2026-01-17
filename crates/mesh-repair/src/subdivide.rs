@@ -10,7 +10,10 @@ use crate::{Mesh, MeshAdjacency, Vertex};
 
 /// Parameters for mesh subdivision.
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "pipeline-config", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "pipeline-config",
+    derive(serde::Serialize, serde::Deserialize)
+)]
 pub struct SubdivideParams {
     /// Number of subdivision iterations.
     /// Each iteration roughly quadruples the triangle count.
@@ -143,10 +146,8 @@ fn subdivide_once(mesh: &Mesh, params: &SubdivideParams) -> Mesh {
     };
 
     // Classify vertices
-    let boundary_vertices: hashbrown::HashSet<u32> = boundary_edges
-        .iter()
-        .flat_map(|&(a, b)| [a, b])
-        .collect();
+    let boundary_vertices: hashbrown::HashSet<u32> =
+        boundary_edges.iter().flat_map(|&(a, b)| [a, b]).collect();
 
     // Step 1: Create edge midpoint vertices
     // Map from edge (v0, v1) to new vertex index
@@ -256,43 +257,39 @@ fn get_edge_vertex(edge_vertices: &HashMap<(u32, u32), u32>, v0: u32, v1: u32) -
 /// Compute the position of a new vertex on an interior edge.
 ///
 /// Uses Loop subdivision weights: 3/8 for edge endpoints, 1/8 for opposite vertices.
-fn compute_edge_vertex_position(
-    mesh: &Mesh,
-    adj: &MeshAdjacency,
-    v0: u32,
-    v1: u32,
-) -> Point3<f64> {
+fn compute_edge_vertex_position(mesh: &Mesh, adj: &MeshAdjacency, v0: u32, v1: u32) -> Point3<f64> {
     let p0 = &mesh.vertices[v0 as usize].position;
     let p1 = &mesh.vertices[v1 as usize].position;
 
     let edge_key = if v0 < v1 { (v0, v1) } else { (v1, v0) };
 
     if let Some(face_indices) = adj.edge_to_faces.get(&edge_key)
-        && face_indices.len() == 2 {
-            // Find the opposite vertices in the two adjacent faces
-            let mut opposite_vertices = Vec::new();
-            for &fi in face_indices {
-                let face = &mesh.faces[fi as usize];
-                for &fv in face {
-                    if fv != v0 && fv != v1 {
-                        opposite_vertices.push(fv);
-                        break;
-                    }
+        && face_indices.len() == 2
+    {
+        // Find the opposite vertices in the two adjacent faces
+        let mut opposite_vertices = Vec::new();
+        for &fi in face_indices {
+            let face = &mesh.faces[fi as usize];
+            for &fv in face {
+                if fv != v0 && fv != v1 {
+                    opposite_vertices.push(fv);
+                    break;
                 }
             }
-
-            if opposite_vertices.len() == 2 {
-                let p2 = &mesh.vertices[opposite_vertices[0] as usize].position;
-                let p3 = &mesh.vertices[opposite_vertices[1] as usize].position;
-
-                // Loop weights: 3/8, 3/8, 1/8, 1/8
-                return Point3::new(
-                    (3.0 * p0.x + 3.0 * p1.x + p2.x + p3.x) / 8.0,
-                    (3.0 * p0.y + 3.0 * p1.y + p2.y + p3.y) / 8.0,
-                    (3.0 * p0.z + 3.0 * p1.z + p2.z + p3.z) / 8.0,
-                );
-            }
         }
+
+        if opposite_vertices.len() == 2 {
+            let p2 = &mesh.vertices[opposite_vertices[0] as usize].position;
+            let p3 = &mesh.vertices[opposite_vertices[1] as usize].position;
+
+            // Loop weights: 3/8, 3/8, 1/8, 1/8
+            return Point3::new(
+                (3.0 * p0.x + 3.0 * p1.x + p2.x + p3.x) / 8.0,
+                (3.0 * p0.y + 3.0 * p1.y + p2.y + p3.y) / 8.0,
+                (3.0 * p0.z + 3.0 * p1.z + p2.z + p3.z) / 8.0,
+            );
+        }
+    }
 
     // Fallback to midpoint
     Point3::new(

@@ -7,7 +7,7 @@ use colored::Colorize;
 use mesh_repair::Mesh;
 use serde::Serialize;
 
-use crate::{output, Cli, OutputFormat};
+use crate::{Cli, OutputFormat, output};
 
 #[derive(Serialize)]
 struct MeshInfo {
@@ -33,7 +33,8 @@ struct BoundsInfo {
 }
 
 pub fn run(input: &Path, detailed: bool, cli: &Cli) -> Result<()> {
-    let mesh = Mesh::load(input).with_context(|| format!("Failed to load mesh from {:?}", input))?;
+    let mesh =
+        Mesh::load(input).with_context(|| format!("Failed to load mesh from {:?}", input))?;
 
     let components = mesh.find_components();
     let bounds = mesh.bounds().map(|(min, max)| {

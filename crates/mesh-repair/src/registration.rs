@@ -506,7 +506,9 @@ pub fn align_meshes(
             let icp_result = icp_align(&landmark_result.mesh, target, &icp_params, false)?;
 
             // Compose transformations
-            let total_transform = landmark_result.transformation.then(&icp_result.transformation);
+            let total_transform = landmark_result
+                .transformation
+                .then(&icp_result.transformation);
             let total_iterations = landmark_result.iterations + icp_result.iterations;
 
             Ok(RegistrationResult {
@@ -525,7 +527,9 @@ pub fn align_meshes(
             let nr_result = non_rigid_align(source, target, &NonRigidParams::default(), params)?;
             Ok(RegistrationResult {
                 mesh: nr_result.mesh,
-                transformation: nr_result.initial_transform.unwrap_or_else(RigidTransform::identity),
+                transformation: nr_result
+                    .initial_transform
+                    .unwrap_or_else(RigidTransform::identity),
                 rms_error: nr_result.rms_error,
                 max_error: nr_result.max_error,
                 iterations: nr_result.iterations,
@@ -544,8 +548,7 @@ fn icp_align(
     _point_to_plane: bool,
 ) -> MeshResult<RegistrationResult> {
     // Build target point cloud for nearest neighbor queries
-    let target_points: Vec<Point3<f64>> =
-        target.vertices.iter().map(|v| v.position).collect();
+    let target_points: Vec<Point3<f64>> = target.vertices.iter().map(|v| v.position).collect();
 
     // Subsample source points if needed
     let source_indices: Vec<usize> = if params.subsample_ratio < 1.0 {
@@ -604,7 +607,8 @@ fn icp_align(
         // Compute optimal transformation for this iteration
         let (source_pts, target_pts): (Vec<_>, Vec<_>) = correspondences.into_iter().unzip();
 
-        let iter_transform = compute_rigid_transform(&source_pts, &target_pts, params.allow_scaling);
+        let iter_transform =
+            compute_rigid_transform(&source_pts, &target_pts, params.allow_scaling);
 
         // Update cumulative transform and transformed points
         current_transform = current_transform.then(&iter_transform);
@@ -624,8 +628,11 @@ fn icp_align(
     }
 
     // Calculate final error metrics
-    let (rms_error, max_error, correspondences_used) =
-        calculate_alignment_error(&result_mesh, &target_points, params.max_correspondence_distance);
+    let (rms_error, max_error, correspondences_used) = calculate_alignment_error(
+        &result_mesh,
+        &target_points,
+        params.max_correspondence_distance,
+    );
 
     Ok(RegistrationResult {
         mesh: result_mesh,
@@ -727,12 +734,16 @@ fn compute_rigid_transform(
     }
 
     // Compute centroids
-    let source_centroid: Vector3<f64> = source.iter().map(|p| p.coords).sum::<Vector3<f64>>() / n as f64;
-    let target_centroid: Vector3<f64> = target.iter().map(|p| p.coords).sum::<Vector3<f64>>() / n as f64;
+    let source_centroid: Vector3<f64> =
+        source.iter().map(|p| p.coords).sum::<Vector3<f64>>() / n as f64;
+    let target_centroid: Vector3<f64> =
+        target.iter().map(|p| p.coords).sum::<Vector3<f64>>() / n as f64;
 
     // Center the points
-    let centered_source: Vec<Vector3<f64>> = source.iter().map(|p| p.coords - source_centroid).collect();
-    let centered_target: Vec<Vector3<f64>> = target.iter().map(|p| p.coords - target_centroid).collect();
+    let centered_source: Vec<Vector3<f64>> =
+        source.iter().map(|p| p.coords - source_centroid).collect();
+    let centered_target: Vec<Vector3<f64>> =
+        target.iter().map(|p| p.coords - target_centroid).collect();
 
     // Compute cross-covariance matrix H
     let mut h = Matrix3::zeros();
@@ -946,8 +957,11 @@ pub fn non_rigid_align(
         }
 
         // Apply regularization (Laplacian smoothing of displacements)
-        let regularized_displacements =
-            regularize_displacements(&control_positions, &correspondence_displacements, nr_params.stiffness);
+        let regularized_displacements = regularize_displacements(
+            &control_positions,
+            &correspondence_displacements,
+            nr_params.stiffness,
+        );
 
         control_displacements = regularized_displacements;
 
@@ -956,7 +970,11 @@ pub fn non_rigid_align(
             &control_positions,
             &control_displacements,
             &landmark_constraints,
-            &working_mesh.vertices.iter().map(|v| v.position).collect::<Vec<_>>(),
+            &working_mesh
+                .vertices
+                .iter()
+                .map(|v| v.position)
+                .collect::<Vec<_>>(),
             nr_params.smoothness,
         );
 
@@ -1014,8 +1032,11 @@ pub fn non_rigid_align(
     }
 
     // Calculate final metrics
-    let (rms_error, max_error, correspondences_used) =
-        calculate_alignment_error(&result_mesh, &target_points, base_params.max_correspondence_distance);
+    let (rms_error, max_error, correspondences_used) = calculate_alignment_error(
+        &result_mesh,
+        &target_points,
+        base_params.max_correspondence_distance,
+    );
 
     let displacement_magnitudes: Vec<f64> = final_displacements.iter().map(|d| d.norm()).collect();
     let average_displacement = if !displacement_magnitudes.is_empty() {
@@ -1154,10 +1175,20 @@ fn interpolate_displacements_rbf(
 
     if n <= 100 {
         // Full RBF solve for each component (x, y, z)
-        interpolate_rbf_full(&all_positions, &all_displacements, query_positions, smoothness)
+        interpolate_rbf_full(
+            &all_positions,
+            &all_displacements,
+            query_positions,
+            smoothness,
+        )
     } else {
         // Simplified: weighted average based on distance
-        interpolate_rbf_simplified(&all_positions, &all_displacements, query_positions, smoothness)
+        interpolate_rbf_simplified(
+            &all_positions,
+            &all_displacements,
+            query_positions,
+            smoothness,
+        )
     }
 }
 
@@ -1191,10 +1222,8 @@ fn interpolate_rbf_full(
     let decomp = phi.clone().lu();
 
     for component in 0..3 {
-        let b: DVector<f64> = DVector::from_iterator(
-            n,
-            control_displacements.iter().map(|d| d[component]),
-        );
+        let b: DVector<f64> =
+            DVector::from_iterator(n, control_displacements.iter().map(|d| d[component]));
 
         if let Some(weights) = decomp.solve(&b) {
             // Evaluate at query points
@@ -1258,11 +1287,7 @@ fn interpolate_rbf_simplified(
 
 /// Thin-plate spline RBF kernel.
 fn thin_plate_spline_rbf(r: f64, _epsilon: f64) -> f64 {
-    if r < 1e-10 {
-        0.0
-    } else {
-        r * r * r.ln()
-    }
+    if r < 1e-10 { 0.0 } else { r * r * r.ln() }
 }
 
 #[cfg(test)]
@@ -1401,7 +1426,9 @@ mod tests {
             vertex.position.coords *= 2.0;
         }
 
-        let params = RegistrationParams::icp().with_scaling().with_max_iterations(100);
+        let params = RegistrationParams::icp()
+            .with_scaling()
+            .with_max_iterations(100);
         let result = align_meshes(&source, &target, &params).unwrap();
 
         // Should make some progress - scaling recovery is challenging for ICP
@@ -1427,7 +1454,8 @@ mod tests {
 
     #[test]
     fn test_transform_inverse() {
-        let rotation = UnitQuaternion::from_axis_angle(&Vector3::z_axis(), std::f64::consts::FRAC_PI_2);
+        let rotation =
+            UnitQuaternion::from_axis_angle(&Vector3::z_axis(), std::f64::consts::FRAC_PI_2);
         let transform = RigidTransform {
             rotation,
             translation: Vector3::new(5.0, 3.0, 1.0),
@@ -1559,8 +1587,16 @@ mod tests {
         // Provide landmarks with different weights
         let landmarks = vec![
             Landmark::weighted(Point3::new(0.0, 0.0, 0.0), Point3::new(5.0, 0.0, 0.0), 2.0),
-            Landmark::weighted(Point3::new(10.0, 0.0, 0.0), Point3::new(15.0, 0.0, 0.0), 1.0),
-            Landmark::weighted(Point3::new(5.0, 8.66, 0.0), Point3::new(10.0, 8.66, 0.0), 1.0),
+            Landmark::weighted(
+                Point3::new(10.0, 0.0, 0.0),
+                Point3::new(15.0, 0.0, 0.0),
+                1.0,
+            ),
+            Landmark::weighted(
+                Point3::new(5.0, 8.66, 0.0),
+                Point3::new(10.0, 8.66, 0.0),
+                1.0,
+            ),
         ];
 
         let params = RegistrationParams::landmark_based(landmarks);
@@ -1571,7 +1607,8 @@ mod tests {
 
     #[test]
     fn test_rigid_transform_to_matrix() {
-        let rotation = UnitQuaternion::from_axis_angle(&Vector3::z_axis(), std::f64::consts::FRAC_PI_2);
+        let rotation =
+            UnitQuaternion::from_axis_angle(&Vector3::z_axis(), std::f64::consts::FRAC_PI_2);
         let transform = RigidTransform {
             rotation,
             translation: Vector3::new(1.0, 2.0, 3.0),
@@ -1733,7 +1770,12 @@ mod tests {
         // Each entry should have position and displacement
         for (pos, _disp) in &field {
             // Position should be from original mesh
-            assert!(source.vertices.iter().any(|v| (v.position - pos).norm() < 1e-6));
+            assert!(
+                source
+                    .vertices
+                    .iter()
+                    .any(|v| (v.position - pos).norm() < 1e-6)
+            );
         }
     }
 

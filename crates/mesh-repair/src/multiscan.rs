@@ -35,7 +35,7 @@
 //! println!("Merged mesh: {} vertices", merged.mesh.vertices.len());
 //! ```
 
-use crate::registration::{align_meshes, RegistrationParams, RigidTransform};
+use crate::registration::{RegistrationParams, RigidTransform, align_meshes};
 use crate::{Mesh, MeshError, MeshResult};
 use nalgebra::{Point3, UnitQuaternion, Vector3};
 use std::collections::HashMap;
@@ -265,8 +265,7 @@ pub fn align_multiple_scans_with_params(
     });
 
     // Initialize transforms (identity for all)
-    let mut transforms: Vec<RigidTransform> =
-        vec![RigidTransform::identity(); scans.len()];
+    let mut transforms: Vec<RigidTransform> = vec![RigidTransform::identity(); scans.len()];
     let mut pairwise_errors = Vec::new();
 
     // Align each scan to reference
@@ -362,16 +361,22 @@ pub fn merge_scans(scans: &[Mesh], params: &MergeParams) -> MergeResult {
 
         let offset = *vertex_offsets.last().unwrap() as u32;
         for face in &scan.faces {
-            merged.faces.push([face[0] + offset, face[1] + offset, face[2] + offset]);
+            merged
+                .faces
+                .push([face[0] + offset, face[1] + offset, face[2] + offset]);
         }
     }
 
     let mut duplicates_removed = 0;
 
     // Find and handle overlapping regions
-    if params.remove_duplicates || matches!(params.overlap_handling, OverlapHandling::Average | OverlapHandling::SelectBest) {
-        let (deduped, removed, regions) =
-            handle_overlaps(&merged, scans, &vertex_offsets, params);
+    if params.remove_duplicates
+        || matches!(
+            params.overlap_handling,
+            OverlapHandling::Average | OverlapHandling::SelectBest
+        )
+    {
+        let (deduped, removed, regions) = handle_overlaps(&merged, scans, &vertex_offsets, params);
         merged = deduped;
         duplicates_removed = removed;
         overlap_regions = regions;
@@ -450,8 +455,10 @@ fn refine_global_alignment(
                 let weight = overlap;
                 accumulated_translation += result.transformation.translation * weight;
                 // Simple weighted average for rotation (this is an approximation)
-                accumulated_rotation = accumulated_rotation
-                    .slerp(&result.transformation.rotation, weight / (weight_sum + weight));
+                accumulated_rotation = accumulated_rotation.slerp(
+                    &result.transformation.rotation,
+                    weight / (weight_sum + weight),
+                );
                 weight_sum += weight;
                 total_error += result.rms_error;
                 pair_count += 1;
@@ -599,9 +606,10 @@ fn handle_overlaps(
         if is_duplicate[old_idx] {
             // Map to the vertex it's a duplicate of
             if let Some(original_idx) = duplicate_of[old_idx]
-                && let Some(&new_idx) = vertex_map.get(&original_idx) {
-                    vertex_map.insert(old_idx, new_idx);
-                }
+                && let Some(&new_idx) = vertex_map.get(&original_idx)
+            {
+                vertex_map.insert(old_idx, new_idx);
+            }
         } else {
             let new_idx = result.vertices.len();
             vertex_map.insert(old_idx, new_idx);
@@ -743,7 +751,11 @@ impl Mesh {
     }
 
     /// Merge this mesh with other scans using custom parameters.
-    pub fn merge_with_scans_params(&self, other_scans: &[Mesh], params: &MergeParams) -> MergeResult {
+    pub fn merge_with_scans_params(
+        &self,
+        other_scans: &[Mesh],
+        params: &MergeParams,
+    ) -> MergeResult {
         let mut all_scans = vec![self.clone()];
         all_scans.extend(other_scans.iter().cloned());
         merge_scans(&all_scans, params)
@@ -757,9 +769,12 @@ mod tests {
 
     fn create_test_triangle(offset_x: f64, offset_y: f64) -> Mesh {
         let mut mesh = Mesh::new();
-        mesh.vertices.push(Vertex::from_coords(0.0 + offset_x, 0.0 + offset_y, 0.0));
-        mesh.vertices.push(Vertex::from_coords(10.0 + offset_x, 0.0 + offset_y, 0.0));
-        mesh.vertices.push(Vertex::from_coords(5.0 + offset_x, 10.0 + offset_y, 0.0));
+        mesh.vertices
+            .push(Vertex::from_coords(0.0 + offset_x, 0.0 + offset_y, 0.0));
+        mesh.vertices
+            .push(Vertex::from_coords(10.0 + offset_x, 0.0 + offset_y, 0.0));
+        mesh.vertices
+            .push(Vertex::from_coords(5.0 + offset_x, 10.0 + offset_y, 0.0));
         mesh.faces.push([0, 1, 2]);
         mesh
     }

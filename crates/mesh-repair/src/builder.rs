@@ -24,19 +24,20 @@
 //! repaired.mesh.save("repaired.stl").unwrap();
 //! ```
 
+use crate::Mesh;
 use crate::components::remove_small_components;
 use crate::error::MeshResult;
 use crate::holes::fill_holes_with_max_edges;
 use crate::progress::ProgressCallback;
 use crate::repair::{
-    compute_vertex_normals, fix_non_manifold_edges, remove_degenerate_triangles_enhanced,
-    remove_duplicate_faces, remove_unreferenced_vertices, weld_vertices, RepairParams,
+    RepairParams, compute_vertex_normals, fix_non_manifold_edges,
+    remove_degenerate_triangles_enhanced, remove_duplicate_faces, remove_unreferenced_vertices,
+    weld_vertices,
 };
 use crate::winding::fix_winding_order;
-use crate::Mesh;
 
 /// Result from RepairBuilder containing the repaired mesh and statistics.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct RepairResult {
     /// The repaired mesh.
     pub mesh: Mesh,
@@ -56,22 +57,6 @@ pub struct RepairResult {
     pub unreferenced_removed: usize,
     /// Whether winding order was fixed.
     pub winding_fixed: bool,
-}
-
-impl Default for RepairResult {
-    fn default() -> Self {
-        Self {
-            mesh: Mesh::new(),
-            vertices_welded: 0,
-            degenerates_removed: 0,
-            duplicates_removed: 0,
-            non_manifold_fixed: 0,
-            holes_filled: 0,
-            components_removed: 0,
-            unreferenced_removed: 0,
-            winding_fixed: false,
-        }
-    }
 }
 
 /// Queued repair operation.
@@ -190,7 +175,8 @@ impl RepairBuilder {
     pub fn for_scans(mut self) -> Self {
         let params = RepairParams::for_scans();
         self.operations.clear();
-        self.operations.push(RepairOp::WeldVertices(params.weld_epsilon));
+        self.operations
+            .push(RepairOp::WeldVertices(params.weld_epsilon));
         self.operations.push(RepairOp::RemoveDegenerates {
             area_threshold: params.degenerate_area_threshold,
             aspect_ratio: params.degenerate_aspect_ratio,
@@ -199,7 +185,8 @@ impl RepairBuilder {
         self.operations.push(RepairOp::RemoveDuplicates);
         self.operations.push(RepairOp::FixNonManifold);
         self.operations.push(RepairOp::FixWinding);
-        self.operations.push(RepairOp::FillHoles(params.max_hole_edges));
+        self.operations
+            .push(RepairOp::FillHoles(params.max_hole_edges));
         self.operations.push(RepairOp::RemoveUnreferenced);
         self.operations.push(RepairOp::ComputeNormals);
         self
@@ -220,7 +207,8 @@ impl RepairBuilder {
     pub fn for_cad(mut self) -> Self {
         let params = RepairParams::for_cad();
         self.operations.clear();
-        self.operations.push(RepairOp::WeldVertices(params.weld_epsilon));
+        self.operations
+            .push(RepairOp::WeldVertices(params.weld_epsilon));
         self.operations.push(RepairOp::RemoveDegenerates {
             area_threshold: params.degenerate_area_threshold,
             aspect_ratio: params.degenerate_aspect_ratio,
@@ -248,7 +236,8 @@ impl RepairBuilder {
     pub fn for_printing(mut self) -> Self {
         let params = RepairParams::for_printing();
         self.operations.clear();
-        self.operations.push(RepairOp::WeldVertices(params.weld_epsilon));
+        self.operations
+            .push(RepairOp::WeldVertices(params.weld_epsilon));
         self.operations.push(RepairOp::RemoveDegenerates {
             area_threshold: params.degenerate_area_threshold,
             aspect_ratio: params.degenerate_aspect_ratio,
@@ -257,7 +246,8 @@ impl RepairBuilder {
         self.operations.push(RepairOp::RemoveDuplicates);
         self.operations.push(RepairOp::FixNonManifold);
         self.operations.push(RepairOp::FixWinding);
-        self.operations.push(RepairOp::FillHoles(params.max_hole_edges));
+        self.operations
+            .push(RepairOp::FillHoles(params.max_hole_edges));
         self.operations.push(RepairOp::RemoveUnreferenced);
         self.operations.push(RepairOp::ComputeNormals);
         self
@@ -365,7 +355,8 @@ impl RepairBuilder {
     ///
     /// * `min_faces` - Minimum number of faces for a component to keep
     pub fn remove_small_components(mut self, min_faces: usize) -> Self {
-        self.operations.push(RepairOp::RemoveSmallComponents(min_faces));
+        self.operations
+            .push(RepairOp::RemoveSmallComponents(min_faces));
         self
     }
 
@@ -492,7 +483,8 @@ impl RepairBuilder {
                     }
                 }
                 RepairOp::RemoveSmallComponents(min_faces) => {
-                    result.components_removed += remove_small_components(&mut self.mesh, *min_faces);
+                    result.components_removed +=
+                        remove_small_components(&mut self.mesh, *min_faces);
                 }
                 RepairOp::RemoveUnreferenced => {
                     result.unreferenced_removed += remove_unreferenced_vertices(&mut self.mesh);

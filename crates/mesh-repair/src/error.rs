@@ -134,7 +134,11 @@ impl std::fmt::Display for RecoverySuggestion {
         match self {
             RecoverySuggestion::ReexportFile { format } => {
                 if let Some(fmt) = format {
-                    write!(f, "Try re-exporting the mesh as {} from the original software", fmt)
+                    write!(
+                        f,
+                        "Try re-exporting the mesh as {} from the original software",
+                        fmt
+                    )
                 } else {
                     write!(f, "Try re-exporting the mesh from the original software")
                 }
@@ -186,10 +190,7 @@ pub enum MeshLocation {
         vertices: Option<[u32; 3]>,
     },
     /// Error at a specific edge.
-    Edge {
-        vertex_a: usize,
-        vertex_b: usize,
-    },
+    Edge { vertex_a: usize, vertex_b: usize },
     /// Error in a file at a specific location.
     File {
         path: PathBuf,
@@ -235,7 +236,10 @@ impl std::fmt::Display for MeshLocation {
                 }
                 write!(f, "{}", result)
             }
-            MeshLocation::Region { description, face_count } => {
+            MeshLocation::Region {
+                description,
+                face_count,
+            } => {
                 write!(f, "{} ({} faces)", description, face_count)
             }
             MeshLocation::Unknown => {
@@ -282,7 +286,9 @@ pub enum MeshError {
     #[error("failed to parse mesh from {path}: {details}")]
     #[diagnostic(
         code(mesh::parse::error),
-        help("The file may be corrupted or in an unsupported format variant. Try re-exporting from the original software.")
+        help(
+            "The file may be corrupted or in an unsupported format variant. Try re-exporting from the original software."
+        )
     )]
     ParseError { path: PathBuf, details: String },
 
@@ -298,7 +304,9 @@ pub enum MeshError {
     #[error("mesh is empty: {details}")]
     #[diagnostic(
         code(mesh::validation::empty),
-        help("The mesh must have at least one vertex and one face. Check that the file was exported correctly.")
+        help(
+            "The mesh must have at least one vertex and one face. Check that the file was exported correctly."
+        )
     )]
     EmptyMesh { details: String },
 
@@ -306,7 +314,9 @@ pub enum MeshError {
     #[error("invalid mesh topology: {details}")]
     #[diagnostic(
         code(mesh::validation::topology),
-        help("Try running `mesh repair` to fix topology issues, or use `mesh validate` for a detailed report.")
+        help(
+            "Try running `mesh repair` to fix topology issues, or use `mesh validate` for a detailed report."
+        )
     )]
     InvalidTopology { details: String },
 
@@ -319,10 +329,14 @@ pub enum MeshError {
     RepairFailed { details: String },
 
     /// Invalid vertex index in face data.
-    #[error("invalid vertex index: face {face_index} references vertex {vertex_index}, but mesh only has {vertex_count} vertices")]
+    #[error(
+        "invalid vertex index: face {face_index} references vertex {vertex_index}, but mesh only has {vertex_count} vertices"
+    )]
     #[diagnostic(
         code(mesh::validation::vertex_index),
-        help("Run `mesh repair` to remove faces with invalid vertex references, or check the mesh export settings.")
+        help(
+            "Run `mesh repair` to remove faces with invalid vertex references, or check the mesh export settings."
+        )
     )]
     InvalidVertexIndex {
         face_index: usize,
@@ -334,7 +348,9 @@ pub enum MeshError {
     #[error("invalid coordinate at vertex {vertex_index}: {coordinate} is {value}")]
     #[diagnostic(
         code(mesh::validation::coordinate),
-        help("Check for numerical issues in the source data. This often happens with very small or very large values.")
+        help(
+            "Check for numerical issues in the source data. This often happens with very small or very large values."
+        )
     )]
     InvalidCoordinate {
         vertex_index: usize,
@@ -346,7 +362,9 @@ pub enum MeshError {
     #[error("hole filling failed: {details}")]
     #[diagnostic(
         code(mesh::repair::hole_fill),
-        help("The hole may be too complex or have self-intersecting boundaries. Try splitting the mesh or filling manually.")
+        help(
+            "The hole may be too complex or have self-intersecting boundaries. Try splitting the mesh or filling manually."
+        )
     )]
     HoleFillFailed { details: String },
 
@@ -354,7 +372,9 @@ pub enum MeshError {
     #[error("boolean operation failed: {details}")]
     #[diagnostic(
         code(mesh::boolean::failed),
-        help("Ensure both meshes are watertight and non-self-intersecting. Try running `mesh repair` on both inputs first.")
+        help(
+            "Ensure both meshes are watertight and non-self-intersecting. Try running `mesh repair` on both inputs first."
+        )
     )]
     BooleanFailed { details: String, operation: String },
 
@@ -362,7 +382,9 @@ pub enum MeshError {
     #[error("decimation failed: {details}")]
     #[diagnostic(
         code(mesh::decimate::failed),
-        help("Try a less aggressive target ratio or ensure the mesh has valid topology before decimation.")
+        help(
+            "Try a less aggressive target ratio or ensure the mesh has valid topology before decimation."
+        )
     )]
     DecimationFailed { details: String },
 
@@ -417,7 +439,8 @@ impl MeshError {
                 operations: vec!["fix_winding".into(), "remove_degenerate".into()],
             },
             MeshError::RepairFailed { .. } => RecoverySuggestion::ManualIntervention {
-                description: "Try running individual repair operations to identify the issue".into(),
+                description: "Try running individual repair operations to identify the issue"
+                    .into(),
             },
             MeshError::InvalidVertexIndex { .. } => RecoverySuggestion::RunRepair {
                 operations: vec!["validate".into(), "remove_invalid_faces".into()],
@@ -429,7 +452,10 @@ impl MeshError {
                 operations: vec!["fill_holes with max_edges parameter".into()],
             },
             MeshError::BooleanFailed { .. } => RecoverySuggestion::RunRepair {
-                operations: vec!["repair both meshes".into(), "check for self-intersections".into()],
+                operations: vec![
+                    "repair both meshes".into(),
+                    "check for self-intersections".into(),
+                ],
             },
             MeshError::DecimationFailed { .. } => RecoverySuggestion::AdjustParameters {
                 parameters: vec![("target_ratio".into(), "try a higher value".into())],
@@ -506,11 +532,7 @@ impl MeshError {
     }
 
     /// Create an InvalidCoordinate error.
-    pub fn invalid_coordinate(
-        vertex_index: usize,
-        coordinate: &'static str,
-        value: f64,
-    ) -> Self {
+    pub fn invalid_coordinate(vertex_index: usize, coordinate: &'static str, value: f64) -> Self {
         MeshError::InvalidCoordinate {
             vertex_index,
             coordinate,
@@ -598,10 +620,7 @@ pub enum ValidationIssue {
         value: f64,
     },
     /// Degenerate face (zero area).
-    DegenerateFace {
-        face_index: usize,
-        area: f64,
-    },
+    DegenerateFace { face_index: usize, area: f64 },
     /// Non-manifold edge (shared by more than 2 faces).
     NonManifoldEdge {
         vertex_a: usize,
@@ -614,10 +633,7 @@ pub enum ValidationIssue {
         neighbor_index: usize,
     },
     /// Self-intersection detected.
-    SelfIntersection {
-        face_a: usize,
-        face_b: usize,
-    },
+    SelfIntersection { face_a: usize, face_b: usize },
 }
 
 impl ValidationIssue {
@@ -662,9 +678,7 @@ impl ValidationIssue {
             ValidationIssue::NonManifoldEdge { .. } => {
                 "Run `mesh repair` to fix non-manifold edges"
             }
-            ValidationIssue::InconsistentWinding { .. } => {
-                "Run `mesh repair` to fix winding order"
-            }
+            ValidationIssue::InconsistentWinding { .. } => "Run `mesh repair` to fix winding order",
             ValidationIssue::SelfIntersection { .. } => {
                 "Self-intersections may need manual repair in a 3D editor"
             }
@@ -701,7 +715,11 @@ impl std::fmt::Display for ValidationIssue {
                 vertex_index,
                 coordinate,
             } => {
-                write!(f, "vertex {} has NaN {} coordinate", vertex_index, coordinate)
+                write!(
+                    f,
+                    "vertex {} has NaN {} coordinate",
+                    vertex_index, coordinate
+                )
             }
             ValidationIssue::InfiniteCoordinate {
                 vertex_index,
@@ -715,11 +733,7 @@ impl std::fmt::Display for ValidationIssue {
                 )
             }
             ValidationIssue::DegenerateFace { face_index, area } => {
-                write!(
-                    f,
-                    "face {} is degenerate (area: {:.2e})",
-                    face_index, area
-                )
+                write!(f, "face {} is degenerate (area: {:.2e})", face_index, area)
             }
             ValidationIssue::NonManifoldEdge {
                 vertex_a,

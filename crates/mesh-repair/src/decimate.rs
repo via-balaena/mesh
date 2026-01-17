@@ -3,14 +3,17 @@
 //! This module provides mesh simplification by iteratively collapsing edges
 //! while minimizing geometric error using the Quadric Error Metrics (QEM) algorithm.
 
-use crate::{Mesh, Vertex, MeshAdjacency};
+use crate::{Mesh, MeshAdjacency, Vertex};
 use nalgebra::Point3;
-use std::collections::{BinaryHeap, HashSet, HashMap};
 use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashMap, HashSet};
 
 /// Parameters for mesh decimation.
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "pipeline-config", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "pipeline-config",
+    derive(serde::Serialize, serde::Deserialize)
+)]
 pub struct DecimateParams {
     /// Target number of triangles. If None, uses target_ratio instead.
     pub target_triangles: Option<usize>,
@@ -109,18 +112,30 @@ struct Quadric {
     // [  e f g]
     // [    h i]
     // [      j]
-    a: f64, b: f64, c: f64, d: f64,
-    e: f64, f: f64, g: f64,
-    h: f64, i: f64,
+    a: f64,
+    b: f64,
+    c: f64,
+    d: f64,
+    e: f64,
+    f: f64,
+    g: f64,
+    h: f64,
+    i: f64,
     j: f64,
 }
 
 impl Default for Quadric {
     fn default() -> Self {
         Self {
-            a: 0.0, b: 0.0, c: 0.0, d: 0.0,
-            e: 0.0, f: 0.0, g: 0.0,
-            h: 0.0, i: 0.0,
+            a: 0.0,
+            b: 0.0,
+            c: 0.0,
+            d: 0.0,
+            e: 0.0,
+            f: 0.0,
+            g: 0.0,
+            h: 0.0,
+            i: 0.0,
             j: 0.0,
         }
     }
@@ -130,9 +145,15 @@ impl Quadric {
     /// Create a quadric from a plane equation (ax + by + cz + d = 0).
     fn from_plane(a: f64, b: f64, c: f64, d: f64) -> Self {
         Self {
-            a: a * a, b: a * b, c: a * c, d: a * d,
-            e: b * b, f: b * c, g: b * d,
-            h: c * c, i: c * d,
+            a: a * a,
+            b: a * b,
+            c: a * c,
+            d: a * d,
+            e: b * b,
+            f: b * c,
+            g: b * d,
+            h: c * c,
+            i: c * d,
             j: d * d,
         }
     }
@@ -154,9 +175,15 @@ impl Quadric {
     /// Evaluate the quadric error for a point.
     fn evaluate(&self, x: f64, y: f64, z: f64) -> f64 {
         // v^T * Q * v where v = [x, y, z, 1]
-        self.a * x * x + 2.0 * self.b * x * y + 2.0 * self.c * x * z + 2.0 * self.d * x
-            + self.e * y * y + 2.0 * self.f * y * z + 2.0 * self.g * y
-            + self.h * z * z + 2.0 * self.i * z
+        self.a * x * x
+            + 2.0 * self.b * x * y
+            + 2.0 * self.c * x * z
+            + 2.0 * self.d * x
+            + self.e * y * y
+            + 2.0 * self.f * y * z
+            + 2.0 * self.g * y
+            + self.h * z * z
+            + 2.0 * self.i * z
             + self.j
     }
 
@@ -168,8 +195,8 @@ impl Quadric {
         // [c f h] [z]   [-i]
 
         let det = self.a * (self.e * self.h - self.f * self.f)
-                - self.b * (self.b * self.h - self.f * self.c)
-                + self.c * (self.b * self.f - self.e * self.c);
+            - self.b * (self.b * self.h - self.f * self.c)
+            + self.c * (self.b * self.f - self.e * self.c);
 
         if det.abs() < 1e-10 {
             return None;
@@ -222,7 +249,10 @@ impl PartialOrd for EdgeCollapse {
 impl Ord for EdgeCollapse {
     fn cmp(&self, other: &Self) -> Ordering {
         // Reverse ordering for min-heap behavior (smaller cost = higher priority)
-        other.cost.partial_cmp(&self.cost).unwrap_or(Ordering::Equal)
+        other
+            .cost
+            .partial_cmp(&self.cost)
+            .unwrap_or(Ordering::Equal)
     }
 }
 
@@ -264,9 +294,9 @@ pub fn decimate_mesh(mesh: &Mesh, params: &DecimateParams) -> DecimateResult {
     }
 
     // Calculate target triangle count
-    let target = params.target_triangles.unwrap_or_else(|| {
-        ((original_triangles as f64) * params.target_ratio).ceil() as usize
-    });
+    let target = params
+        .target_triangles
+        .unwrap_or_else(|| ((original_triangles as f64) * params.target_ratio).ceil() as usize);
 
     // Don't decimate if already at or below target
     if original_triangles <= target {
@@ -301,13 +331,7 @@ pub fn decimate_mesh(mesh: &Mesh, params: &DecimateParams) -> DecimateResult {
     };
 
     // Build initial edge collapse queue
-    let mut heap = build_collapse_queue(
-        mesh,
-        &quadrics,
-        &boundary_edges,
-        &sharp_edges,
-        params,
-    );
+    let mut heap = build_collapse_queue(mesh, &quadrics, &boundary_edges, &sharp_edges, params);
 
     // Track which vertices have been merged (maps old index -> new index)
     let mut vertex_remap: HashMap<u32, u32> = HashMap::new();
@@ -555,9 +579,9 @@ fn build_collapse_queue(
             }
             seen_edges.insert(edge);
 
-            if let Some(collapse) = compute_edge_collapse(
-                v1, v2, mesh, quadrics, boundary_edges, sharp_edges, params,
-            ) {
+            if let Some(collapse) =
+                compute_edge_collapse(v1, v2, mesh, quadrics, boundary_edges, sharp_edges, params)
+            {
                 heap.push(collapse);
             }
         }
@@ -693,20 +717,25 @@ fn requeue_vertex_edges(
     let mut neighbors = HashSet::new();
     for face_opt in faces {
         if let Some(face) = face_opt
-            && face.contains(&v) {
-                for &vi in face {
-                    if vi != v && vertices[vi as usize].is_some() {
-                        neighbors.insert(vi);
-                    }
+            && face.contains(&v)
+        {
+            for &vi in face {
+                if vi != v && vertices[vi as usize].is_some() {
+                    neighbors.insert(vi);
                 }
             }
+        }
     }
 
     // Create a temporary mesh-like structure for cost computation
     // This is a bit inefficient but keeps the code simpler
     for &neighbor in &neighbors {
-        let Some(v_vert) = &vertices[v as usize] else { continue };
-        let Some(n_vert) = &vertices[neighbor as usize] else { continue };
+        let Some(v_vert) = &vertices[v as usize] else {
+            continue;
+        };
+        let Some(n_vert) = &vertices[neighbor as usize] else {
+            continue;
+        };
 
         let edge = normalize_edge(v, neighbor);
 
@@ -795,9 +824,9 @@ pub fn decimate_mesh_with_progress(
     }
 
     // Calculate target triangle count
-    let target = params.target_triangles.unwrap_or_else(|| {
-        ((original_triangles as f64) * params.target_ratio).ceil() as usize
-    });
+    let target = params
+        .target_triangles
+        .unwrap_or_else(|| ((original_triangles as f64) * params.target_ratio).ceil() as usize);
 
     // Don't decimate if already at or below target
     if original_triangles <= target {
@@ -837,13 +866,7 @@ pub fn decimate_mesh_with_progress(
     };
 
     // Build initial edge collapse queue
-    let mut heap = build_collapse_queue(
-        mesh,
-        &quadrics,
-        &boundary_edges,
-        &sharp_edges,
-        params,
-    );
+    let mut heap = build_collapse_queue(mesh, &quadrics, &boundary_edges, &sharp_edges, params);
 
     // Track which vertices have been merged (maps old index -> new index)
     let mut vertex_remap: HashMap<u32, u32> = HashMap::new();
@@ -944,10 +967,13 @@ pub fn decimate_mesh_with_progress(
         tracker.increment();
 
         // Report progress periodically
-        if !tracker.maybe_callback(callback, format!(
-            "Decimating: {} triangles remaining (target: {})",
-            active_faces, target
-        )) {
+        if !tracker.maybe_callback(
+            callback,
+            format!(
+                "Decimating: {} triangles remaining (target: {})",
+                active_faces, target
+            ),
+        ) {
             break; // Cancelled
         }
 
@@ -978,10 +1004,7 @@ pub fn decimate_mesh_with_progress(
 }
 
 /// Build the final compacted mesh from the working data.
-fn build_final_mesh(
-    vertices: &[Option<Vertex>],
-    faces: &[Option<[u32; 3]>],
-) -> Mesh {
+fn build_final_mesh(vertices: &[Option<Vertex>], faces: &[Option<[u32; 3]>]) -> Mesh {
     // Compact vertices and create index mapping
     let mut new_vertices = Vec::new();
     let mut vertex_map: HashMap<u32, u32> = HashMap::new();
@@ -1001,12 +1024,13 @@ fn build_final_mesh(
                 vertex_map.get(&face[0]),
                 vertex_map.get(&face[1]),
                 vertex_map.get(&face[2]),
-            ) {
-                // Skip degenerate faces
-                if i0 != i1 && i1 != i2 && i0 != i2 {
-                    new_faces.push([i0, i1, i2]);
-                }
+            )
+        {
+            // Skip degenerate faces
+            if i0 != i1 && i1 != i2 && i0 != i2 {
+                new_faces.push([i0, i1, i2]);
             }
+        }
     }
 
     Mesh {
@@ -1026,13 +1050,13 @@ mod tests {
 
         // 8 vertices of the cube
         mesh.vertices.push(Vertex::from_coords(-s, -s, -s)); // 0
-        mesh.vertices.push(Vertex::from_coords( s, -s, -s)); // 1
-        mesh.vertices.push(Vertex::from_coords( s,  s, -s)); // 2
-        mesh.vertices.push(Vertex::from_coords(-s,  s, -s)); // 3
-        mesh.vertices.push(Vertex::from_coords(-s, -s,  s)); // 4
-        mesh.vertices.push(Vertex::from_coords( s, -s,  s)); // 5
-        mesh.vertices.push(Vertex::from_coords( s,  s,  s)); // 6
-        mesh.vertices.push(Vertex::from_coords(-s,  s,  s)); // 7
+        mesh.vertices.push(Vertex::from_coords(s, -s, -s)); // 1
+        mesh.vertices.push(Vertex::from_coords(s, s, -s)); // 2
+        mesh.vertices.push(Vertex::from_coords(-s, s, -s)); // 3
+        mesh.vertices.push(Vertex::from_coords(-s, -s, s)); // 4
+        mesh.vertices.push(Vertex::from_coords(s, -s, s)); // 5
+        mesh.vertices.push(Vertex::from_coords(s, s, s)); // 6
+        mesh.vertices.push(Vertex::from_coords(-s, s, s)); // 7
 
         // 12 triangles (2 per face)
         // Bottom face (z=-s)
@@ -1097,10 +1121,7 @@ mod tests {
                 Vertex::from_coords(0.5, 1.0, 0.0),
                 Vertex::from_coords(1.5, 1.0, 0.0),
             ],
-            faces: vec![
-                [0, 1, 2],
-                [1, 3, 2],
-            ],
+            faces: vec![[0, 1, 2], [1, 3, 2]],
         };
 
         let params = DecimateParams::default();

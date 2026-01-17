@@ -60,14 +60,19 @@ pub fn detect_holes(_mesh: &Mesh, adjacency: &MeshAdjacency) -> Vec<BoundaryLoop
             loop_vertices.push(current);
 
             // Find next vertex in loop (not the one we came from)
-            let neighbors = edge_neighbors.get(&current).map(|v| v.as_slice()).unwrap_or(&[]);
+            let neighbors = edge_neighbors
+                .get(&current)
+                .map(|v| v.as_slice())
+                .unwrap_or(&[]);
 
             let next = neighbors
                 .iter()
                 .find(|&&n| Some(n) != prev && !visited_vertices.contains(&n))
                 .or_else(|| {
                     // If we're closing the loop, allow going back to start
-                    neighbors.iter().find(|&&n| n == start && loop_vertices.len() > 2)
+                    neighbors
+                        .iter()
+                        .find(|&&n| n == start && loop_vertices.len() > 2)
                 });
 
             match next {
@@ -106,10 +111,7 @@ pub fn detect_holes(_mesh: &Mesh, adjacency: &MeshAdjacency) -> Vec<BoundaryLoop
 /// Fill a hole using ear clipping triangulation.
 ///
 /// Returns the new triangles to add to the mesh.
-pub fn fill_hole_ear_clipping(
-    mesh: &Mesh,
-    boundary: &BoundaryLoop,
-) -> Vec<[u32; 3]> {
+pub fn fill_hole_ear_clipping(mesh: &Mesh, boundary: &BoundaryLoop) -> Vec<[u32; 3]> {
     let n = boundary.vertices.len();
     if n < 3 {
         return Vec::new();
@@ -281,12 +283,7 @@ fn point_in_triangle_2d(
     point_in_triangle_2d_impl(p2, a2, b2, c2)
 }
 
-fn point_in_triangle_2d_impl(
-    p: (f64, f64),
-    a: (f64, f64),
-    b: (f64, f64),
-    c: (f64, f64),
-) -> bool {
+fn point_in_triangle_2d_impl(p: (f64, f64), a: (f64, f64), b: (f64, f64), c: (f64, f64)) -> bool {
     let sign = |p1: (f64, f64), p2: (f64, f64), p3: (f64, f64)| -> f64 {
         (p1.0 - p3.0) * (p2.1 - p3.1) - (p2.0 - p3.0) * (p1.1 - p3.1)
     };

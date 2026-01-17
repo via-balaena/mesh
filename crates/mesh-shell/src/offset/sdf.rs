@@ -7,7 +7,7 @@ use mesh_repair::Mesh;
 
 use crate::error::{ShellError, ShellResult};
 
-use super::adaptive::{create_adaptive_grid, interpolate_offsets_adaptive, AdaptiveSdfParams};
+use super::adaptive::{AdaptiveSdfParams, create_adaptive_grid, interpolate_offsets_adaptive};
 use super::extract::extract_isosurface;
 use super::grid::{SdfGrid, SdfOffsetParams};
 use super::transfer::transfer_vertex_data;
@@ -73,11 +73,7 @@ pub fn apply_sdf_offset(mesh: &Mesh, params: &SdfOffsetParams) -> ShellResult<Sd
     }
 
     // Check that vertices have offset values
-    let missing_offset = mesh
-        .vertices
-        .iter()
-        .filter(|v| v.offset.is_none())
-        .count();
+    let missing_offset = mesh.vertices.iter().filter(|v| v.offset.is_none()).count();
 
     if missing_offset > 0 {
         warn!(

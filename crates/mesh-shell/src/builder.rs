@@ -27,10 +27,10 @@
 use mesh_repair::{Mesh, ThicknessMap};
 
 use crate::error::ShellResult;
-use crate::offset::{apply_sdf_offset, SdfOffsetParams, SdfOffsetResult};
+use crate::offset::{SdfOffsetParams, SdfOffsetResult, apply_sdf_offset};
 use crate::shell::{
-    generate_shell, generate_shell_with_progress, ShellParams, ShellResult as ShellStats,
-    WallGenerationMethod,
+    ShellParams, ShellResult as ShellStats, WallGenerationMethod, generate_shell,
+    generate_shell_with_progress,
 };
 
 /// Result from ShellBuilder containing the generated mesh and statistics.

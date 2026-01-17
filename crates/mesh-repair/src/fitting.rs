@@ -194,8 +194,7 @@ impl FittingBuilder {
     pub fn with_landmark(mut self, name: impl Into<String>, target: Point3<f64>) -> Self {
         let name_str = name.into();
         // Store with zero source - will be resolved from control region during build
-        self.landmarks
-            .insert(name_str, (Point3::origin(), target));
+        self.landmarks.insert(name_str, (Point3::origin(), target));
         self
     }
 

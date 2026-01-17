@@ -217,9 +217,10 @@ impl PointCloud {
     /// Load a point cloud from file, auto-detecting format.
     pub fn load(path: impl AsRef<Path>) -> MeshResult<Self> {
         let path = path.as_ref();
-        let format = PointCloudFormat::from_path(path).ok_or_else(|| MeshError::UnsupportedFormat {
-            extension: path.extension().and_then(|e| e.to_str()).map(String::from),
-        })?;
+        let format =
+            PointCloudFormat::from_path(path).ok_or_else(|| MeshError::UnsupportedFormat {
+                extension: path.extension().and_then(|e| e.to_str()).map(String::from),
+            })?;
 
         info!("Loading point cloud from {:?} (format: {:?})", path, format);
 
@@ -242,9 +243,10 @@ impl PointCloud {
     /// Save the point cloud to file, auto-detecting format.
     pub fn save(&self, path: impl AsRef<Path>) -> MeshResult<()> {
         let path = path.as_ref();
-        let format = PointCloudFormat::from_path(path).ok_or_else(|| MeshError::UnsupportedFormat {
-            extension: path.extension().and_then(|e| e.to_str()).map(String::from),
-        })?;
+        let format =
+            PointCloudFormat::from_path(path).ok_or_else(|| MeshError::UnsupportedFormat {
+                extension: path.extension().and_then(|e| e.to_str()).map(String::from),
+            })?;
 
         info!("Saving point cloud to {:?} (format: {:?})", path, format);
 
@@ -439,10 +441,7 @@ impl PointCloud {
         }
 
         let removed = self.len() - result.len();
-        debug!(
-            "Removed {} outliers (threshold={:.4})",
-            removed, threshold
-        );
+        debug!("Removed {} outliers (threshold={:.4})", removed, threshold);
 
         result
     }
@@ -515,10 +514,12 @@ fn load_ply_pointcloud(path: &Path) -> MeshResult<PointCloud> {
     let mut reader = BufReader::new(file);
 
     let parser = Parser::<ply_rs::ply::DefaultElement>::new();
-    let ply = parser.read_ply(&mut reader).map_err(|e| MeshError::ParseError {
-        path: path.to_path_buf(),
-        details: format!("PLY parse error: {:?}", e),
-    })?;
+    let ply = parser
+        .read_ply(&mut reader)
+        .map_err(|e| MeshError::ParseError {
+            path: path.to_path_buf(),
+            details: format!("PLY parse error: {:?}", e),
+        })?;
 
     let mut cloud = PointCloud::new();
 
@@ -537,32 +538,33 @@ fn load_ply_pointcloud(path: &Path) -> MeshResult<PointCloud> {
                 vertex_element.get("nx"),
                 vertex_element.get("ny"),
                 vertex_element.get("nz"),
-            )
-                && let (Ok(nx), Ok(ny), Ok(nz)) = (
-                    get_ply_float(Some(nx)),
-                    get_ply_float(Some(ny)),
-                    get_ply_float(Some(nz)),
-                ) {
-                    point.normal = Some(Vector3::new(nx, ny, nz));
-                }
+            ) && let (Ok(nx), Ok(ny), Ok(nz)) = (
+                get_ply_float(Some(nx)),
+                get_ply_float(Some(ny)),
+                get_ply_float(Some(nz)),
+            ) {
+                point.normal = Some(Vector3::new(nx, ny, nz));
+            }
 
             // Load colors if present
             if let (Some(r), Some(g), Some(b)) = (
                 vertex_element.get("red"),
                 vertex_element.get("green"),
                 vertex_element.get("blue"),
-            )
-                && let (Ok(r), Ok(g), Ok(b)) =
-                    (get_ply_u8(Some(r)), get_ply_u8(Some(g)), get_ply_u8(Some(b)))
-                {
-                    point.color = Some(VertexColor::new(r, g, b));
-                }
+            ) && let (Ok(r), Ok(g), Ok(b)) = (
+                get_ply_u8(Some(r)),
+                get_ply_u8(Some(g)),
+                get_ply_u8(Some(b)),
+            ) {
+                point.color = Some(VertexColor::new(r, g, b));
+            }
 
             // Load intensity if present
             if let Some(intensity) = vertex_element.get("intensity")
-                && let Ok(i) = get_ply_float(Some(intensity)) {
-                    point.intensity = Some(i as f32);
-                }
+                && let Ok(i) = get_ply_float(Some(intensity))
+            {
+                point.intensity = Some(i as f32);
+            }
 
             cloud.push(point);
         }
@@ -752,9 +754,10 @@ fn load_xyz(path: &Path) -> MeshResult<PointCloud> {
                 parts[3].parse::<f64>(),
                 parts[4].parse::<f64>(),
                 parts[5].parse::<f64>(),
-            ) {
-                point.normal = Some(Vector3::new(nx, ny, nz));
-            }
+            )
+        {
+            point.normal = Some(Vector3::new(nx, ny, nz));
+        }
 
         // Check for colors (9 values: x y z nx ny nz r g b, or 6: x y z r g b)
         if parts.len() >= 9 {
@@ -791,7 +794,10 @@ fn save_xyz(cloud: &PointCloud, path: &Path) -> MeshResult<()> {
     let mut writer = BufWriter::new(file);
 
     for point in &cloud.points {
-        let mut line = format!("{} {} {}", point.position.x, point.position.y, point.position.z);
+        let mut line = format!(
+            "{} {} {}",
+            point.position.x, point.position.y, point.position.z
+        );
 
         if let Some(n) = &point.normal {
             line.push_str(&format!(" {} {} {}", n.x, n.y, n.z));
@@ -921,9 +927,12 @@ fn load_pcd(path: &Path) -> MeshResult<PointCloud> {
                 parts.get(nyi).and_then(|s| s.parse::<f64>().ok()),
                 parts.get(nzi).and_then(|s| s.parse::<f64>().ok()),
             )
-                && !nx.is_nan() && !ny.is_nan() && !nz.is_nan() {
-                    point.normal = Some(Vector3::new(nx, ny, nz));
-                }
+            && !nx.is_nan()
+            && !ny.is_nan()
+            && !nz.is_nan()
+        {
+            point.normal = Some(Vector3::new(nx, ny, nz));
+        }
 
         // Extract colors
         if let (Some(ri), Some(gi), Some(bi)) = (r_idx, g_idx, b_idx)
@@ -931,15 +940,17 @@ fn load_pcd(path: &Path) -> MeshResult<PointCloud> {
                 parts.get(ri).and_then(|s| s.parse::<u8>().ok()),
                 parts.get(gi).and_then(|s| s.parse::<u8>().ok()),
                 parts.get(bi).and_then(|s| s.parse::<u8>().ok()),
-            ) {
-                point.color = Some(VertexColor::new(r, g, b));
-            }
+            )
+        {
+            point.color = Some(VertexColor::new(r, g, b));
+        }
 
         // Extract intensity
         if let Some(ii) = intensity_idx
-            && let Some(i) = parts.get(ii).and_then(|s| s.parse::<f32>().ok()) {
-                point.intensity = Some(i);
-            }
+            && let Some(i) = parts.get(ii).and_then(|s| s.parse::<f32>().ok())
+        {
+            point.intensity = Some(i);
+        }
 
         cloud.push(point);
     }
@@ -1029,7 +1040,10 @@ fn save_pcd(cloud: &PointCloud, path: &Path) -> MeshResult<()> {
 
     // Write data
     for point in &cloud.points {
-        let mut line = format!("{} {} {}", point.position.x, point.position.y, point.position.z);
+        let mut line = format!(
+            "{} {} {}",
+            point.position.x, point.position.y, point.position.z
+        );
 
         if has_normals {
             if let Some(n) = &point.normal {
@@ -1252,9 +1266,9 @@ fn reconstruct_ball_pivoting(
     }
 
     // Estimate ball radius if not provided
-    let ball_radius = params.ball_radius.unwrap_or_else(|| {
-        estimate_point_spacing(&cloud) * 2.0
-    });
+    let ball_radius = params
+        .ball_radius
+        .unwrap_or_else(|| estimate_point_spacing(&cloud) * 2.0);
 
     info!(
         "Ball-pivoting reconstruction: {} points, radius={:.4}",
@@ -1277,7 +1291,8 @@ fn reconstruct_ball_pivoting(
 
     // Find a seed triangle
     if let Some(seed) = find_seed_triangle(&cloud, &kdtree, ball_radius, &used_points) {
-        mesh.faces.push([seed.0 as u32, seed.1 as u32, seed.2 as u32]);
+        mesh.faces
+            .push([seed.0 as u32, seed.1 as u32, seed.2 as u32]);
         used_points[seed.0] = true;
         used_points[seed.1] = true;
         used_points[seed.2] = true;
@@ -1298,7 +1313,15 @@ fn reconstruct_ball_pivoting(
         let (v1, v2) = edge_front.pop().unwrap();
 
         // Try to find a point to pivot to
-        if let Some(v3) = find_pivot_point(&cloud, &kdtree, v1, v2, ball_radius, &used_points, &mesh.faces) {
+        if let Some(v3) = find_pivot_point(
+            &cloud,
+            &kdtree,
+            v1,
+            v2,
+            ball_radius,
+            &used_points,
+            &mesh.faces,
+        ) {
             mesh.faces.push([v1 as u32, v2 as u32, v3 as u32]);
 
             if !used_points[v3] {
@@ -1596,7 +1619,11 @@ fn reconstruct_sdf_based(
                 // Compute signed distance using normal
                 if let Some(normal) = &nearest_point.normal {
                     let to_grid = pos - nearest_point.position;
-                    let sign = if to_grid.dot(normal) >= 0.0 { 1.0 } else { -1.0 };
+                    let sign = if to_grid.dot(normal) >= 0.0 {
+                        1.0
+                    } else {
+                        -1.0
+                    };
                     sdf_values[idx] = sign * dist;
                 } else {
                     sdf_values[idx] = dist;
@@ -1632,7 +1659,7 @@ fn extract_isosurface_from_sdf(
     voxel_size: f64,
 ) -> MeshResult<Mesh> {
     use fast_surface_nets::ndshape::ConstShape;
-    use fast_surface_nets::{ndshape::ConstShape3u32, surface_nets, SurfaceNetsBuffer};
+    use fast_surface_nets::{SurfaceNetsBuffer, ndshape::ConstShape3u32, surface_nets};
 
     // Convert to the format expected by fast_surface_nets
     // We need a padded grid for boundary handling
@@ -1767,9 +1794,18 @@ fn corner_position(ix: usize, iy: usize, iz: usize, corner: u8) -> (f64, f64, f6
 /// Convert edge index to vertex indices.
 fn edge_to_vertices(edge: u8) -> (u8, u8) {
     const EDGES: [(u8, u8); 12] = [
-        (0, 1), (1, 2), (2, 3), (3, 0), // Bottom
-        (4, 5), (5, 6), (6, 7), (7, 4), // Top
-        (0, 4), (1, 5), (2, 6), (3, 7), // Vertical
+        (0, 1),
+        (1, 2),
+        (2, 3),
+        (3, 0), // Bottom
+        (4, 5),
+        (5, 6),
+        (6, 7),
+        (7, 4), // Top
+        (0, 4),
+        (1, 5),
+        (2, 6),
+        (3, 7), // Vertical
     ];
     EDGES[edge as usize]
 }
@@ -1803,14 +1839,14 @@ fn get_marching_cubes_triangles(cube_index: u8) -> Vec<[u8; 3]> {
 /// Get edges adjacent to a corner.
 fn corner_edges(corner: u8) -> [u8; 3] {
     const CORNER_EDGES: [[u8; 3]; 8] = [
-        [0, 3, 8],   // 0
-        [0, 1, 9],   // 1
-        [1, 2, 10],  // 2
-        [2, 3, 11],  // 3
-        [4, 7, 8],   // 4
-        [4, 5, 9],   // 5
-        [5, 6, 10],  // 6
-        [6, 7, 11],  // 7
+        [0, 3, 8],  // 0
+        [0, 1, 9],  // 1
+        [1, 2, 10], // 2
+        [2, 3, 11], // 3
+        [4, 7, 8],  // 4
+        [4, 5, 9],  // 5
+        [5, 6, 10], // 6
+        [6, 7, 11], // 7
     ];
     CORNER_EDGES[corner as usize]
 }
@@ -1839,10 +1875,7 @@ mod tests {
 
     #[test]
     fn test_cloud_point_with_normal() {
-        let p = CloudPoint::with_normal(
-            Point3::new(1.0, 2.0, 3.0),
-            Vector3::new(0.0, 0.0, 1.0),
-        );
+        let p = CloudPoint::with_normal(Point3::new(1.0, 2.0, 3.0), Vector3::new(0.0, 0.0, 1.0));
         assert!(p.normal.is_some());
         let n = p.normal.unwrap();
         assert!(approx_eq(n.z, 1.0));
@@ -2087,10 +2120,7 @@ mod tests {
             PointCloudFormat::from_path(Path::new("test.txt")),
             Some(PointCloudFormat::Xyz)
         );
-        assert_eq!(
-            PointCloudFormat::from_path(Path::new("test.stl")),
-            None
-        );
+        assert_eq!(PointCloudFormat::from_path(Path::new("test.stl")), None);
     }
 
     #[test]

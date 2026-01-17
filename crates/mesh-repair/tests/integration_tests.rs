@@ -4,11 +4,10 @@
 //! to ensure all components work together correctly.
 
 use mesh_repair::{
-    Mesh, Vertex, RepairParams, ThicknessParams,
-    validate_mesh_data, ValidationOptions,
+    Mesh, RepairParams, ThicknessParams, ValidationOptions, Vertex, validate_mesh_data,
 };
-use tempfile::NamedTempFile;
 use std::io::Write;
+use tempfile::NamedTempFile;
 
 /// Create a simple valid cube mesh for testing.
 fn create_test_cube(size: f64) -> Mesh {
@@ -112,7 +111,8 @@ facet normal 0 0 -1
     vertex 100 100 0
   endloop
 endfacet
-endsolid test"#.to_string()
+endsolid test"#
+        .to_string()
 }
 
 // =============================================================================
@@ -193,7 +193,12 @@ f 2 7 3
     assert_eq!(mesh.face_count(), reloaded.face_count());
 
     // Verify vertex positions match
-    for (i, (orig, loaded)) in mesh.vertices.iter().zip(reloaded.vertices.iter()).enumerate() {
+    for (i, (orig, loaded)) in mesh
+        .vertices
+        .iter()
+        .zip(reloaded.vertices.iter())
+        .enumerate()
+    {
         let diff = (orig.position - loaded.position).norm();
         assert!(diff < 1e-5, "Vertex {} position mismatch", i);
     }
@@ -281,7 +286,8 @@ fn test_repair_open_mesh() {
 
     // Repair should fill holes
     let params = RepairParams::default();
-    mesh.repair_with_config(&params).expect("Repair should succeed");
+    mesh.repair_with_config(&params)
+        .expect("Repair should succeed");
 
     // Should be watertight after repair
     let final_report = mesh.validate();
@@ -297,7 +303,8 @@ fn test_repair_removes_degenerates() {
 
     // Repair should remove degenerate triangles
     let params = RepairParams::default();
-    mesh.repair_with_config(&params).expect("Repair should succeed");
+    mesh.repair_with_config(&params)
+        .expect("Repair should succeed");
 
     // Degenerate triangle should be removed
     // (exact count depends on removal logic)
@@ -310,7 +317,8 @@ fn test_repair_preset_for_scans() {
     let mut mesh = create_test_cube(10.0);
 
     let params = RepairParams::for_scans();
-    mesh.repair_with_config(&params).expect("Repair should succeed");
+    mesh.repair_with_config(&params)
+        .expect("Repair should succeed");
 
     let report = mesh.validate();
     assert!(report.is_valid());
@@ -322,7 +330,8 @@ fn test_repair_preset_for_cad() {
     let mut mesh = create_test_cube(10.0);
 
     let params = RepairParams::for_cad();
-    mesh.repair_with_config(&params).expect("Repair should succeed");
+    mesh.repair_with_config(&params)
+        .expect("Repair should succeed");
 
     let report = mesh.validate();
     assert!(report.is_valid());
@@ -333,7 +342,8 @@ fn test_repair_preset_for_printing() {
     let mut mesh = create_test_cube(10.0);
 
     let params = RepairParams::for_printing();
-    mesh.repair_with_config(&params).expect("Repair should succeed");
+    mesh.repair_with_config(&params)
+        .expect("Repair should succeed");
 
     let report = mesh.validate();
     assert!(report.is_valid());
@@ -377,8 +387,7 @@ f 2 7 3
     let mut mesh = Mesh::load(input.path()).expect("Should load");
 
     // Step 2: Validate data integrity
-    validate_mesh_data(&mesh, &ValidationOptions::default())
-        .expect("Data should be valid");
+    validate_mesh_data(&mesh, &ValidationOptions::default()).expect("Data should be valid");
 
     // Step 3: Repair
     mesh.repair().expect("Repair should succeed");
@@ -453,7 +462,10 @@ fn test_inside_out_detection() {
     // Should detect inside-out
     let inverted_report = mesh.validate();
     assert!(inverted_report.is_inside_out, "Should detect inside-out");
-    assert!(!inverted_report.is_printable(), "Inside-out should not be printable");
+    assert!(
+        !inverted_report.is_printable(),
+        "Inside-out should not be printable"
+    );
 }
 
 // =============================================================================
@@ -508,7 +520,8 @@ fn test_component_analysis_multiple_components() {
         mesh.vertices.push(v2);
     }
     for f in &cube2.faces {
-        mesh.faces.push([f[0] + offset, f[1] + offset, f[2] + offset]);
+        mesh.faces
+            .push([f[0] + offset, f[1] + offset, f[2] + offset]);
     }
 
     // Should detect 2 components
@@ -540,7 +553,8 @@ fn test_keep_largest_component() {
         mesh.vertices.push(v2);
     }
     for f in &small_cube.faces {
-        mesh.faces.push([f[0] + offset, f[1] + offset, f[2] + offset]);
+        mesh.faces
+            .push([f[0] + offset, f[1] + offset, f[2] + offset]);
     }
 
     let initial_analysis = mesh.find_components();

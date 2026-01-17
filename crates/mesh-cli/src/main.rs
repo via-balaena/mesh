@@ -26,7 +26,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
 use colored::Colorize;
-use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 mod commands;
 mod output;
@@ -305,7 +305,11 @@ fn main() -> Result<()> {
                 // Display error with code and help text
                 eprintln!("{}: {}", "Error".red().bold(), mesh_err);
                 eprintln!("  {}: {}", "Code".cyan(), mesh_err.code());
-                eprintln!("  {}: {}", "Suggestion".green(), mesh_err.recovery_suggestion());
+                eprintln!(
+                    "  {}: {}",
+                    "Suggestion".green(),
+                    mesh_err.recovery_suggestion()
+                );
                 if let Some(location) = mesh_err.location() {
                     eprintln!("  {}: {}", "Location".yellow(), location);
                 }

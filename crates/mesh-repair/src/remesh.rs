@@ -16,7 +16,10 @@ use crate::{Mesh, MeshAdjacency, Vertex};
 
 /// Parameters for isotropic remeshing.
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "pipeline-config", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "pipeline-config",
+    derive(serde::Serialize, serde::Deserialize)
+)]
 pub struct RemeshParams {
     /// Target edge length for the remeshed output.
     /// All edges will tend toward this length.
@@ -419,14 +422,17 @@ pub fn remesh_isotropic(mesh: &Mesh, params: &RemeshParams) -> RemeshResult {
             HashSet::new()
         };
 
-        let _boundary_vertices: HashSet<u32> = boundary_edges
-            .iter()
-            .flat_map(|&(a, b)| [a, b])
-            .collect();
+        let _boundary_vertices: HashSet<u32> =
+            boundary_edges.iter().flat_map(|&(a, b)| [a, b]).collect();
 
         // Step 1: Split long edges
-        let (new_mesh, splits) =
-            split_long_edges(&current_mesh, &adj, max_length, &boundary_edges, &sharp_edges);
+        let (new_mesh, splits) = split_long_edges(
+            &current_mesh,
+            &adj,
+            max_length,
+            &boundary_edges,
+            &sharp_edges,
+        );
         current_mesh = new_mesh;
         total_splits += splits;
 
@@ -437,10 +443,8 @@ pub fn remesh_isotropic(mesh: &Mesh, params: &RemeshParams) -> RemeshResult {
         } else {
             HashSet::new()
         };
-        let boundary_vertices: HashSet<u32> = boundary_edges
-            .iter()
-            .flat_map(|&(a, b)| [a, b])
-            .collect();
+        let boundary_vertices: HashSet<u32> =
+            boundary_edges.iter().flat_map(|&(a, b)| [a, b]).collect();
 
         // Step 2: Collapse short edges
         let (new_mesh, collapses) = collapse_short_edges(
@@ -458,7 +462,8 @@ pub fn remesh_isotropic(mesh: &Mesh, params: &RemeshParams) -> RemeshResult {
         let adj = MeshAdjacency::build(&current_mesh.faces);
 
         // Step 3: Flip edges to improve valence
-        let (new_mesh, flips) = flip_edges_for_valence(&current_mesh, &adj, &boundary_edges, &sharp_edges);
+        let (new_mesh, flips) =
+            flip_edges_for_valence(&current_mesh, &adj, &boundary_edges, &sharp_edges);
         current_mesh = new_mesh;
         total_flips += flips;
 
@@ -542,11 +547,7 @@ fn compute_average_edge_length(mesh: &Mesh) -> f64 {
 }
 
 /// Find edges with dihedral angle above threshold (sharp edges).
-fn find_sharp_edges(
-    mesh: &Mesh,
-    adj: &MeshAdjacency,
-    threshold: f64,
-) -> HashSet<(u32, u32)> {
+fn find_sharp_edges(mesh: &Mesh, adj: &MeshAdjacency, threshold: f64) -> HashSet<(u32, u32)> {
     let mut sharp_edges = HashSet::new();
 
     for (&edge, face_indices) in adj.edge_to_faces.iter() {
@@ -801,7 +802,13 @@ fn collapse_short_edges(
         }
     }
 
-    (Mesh { vertices, faces: new_faces }, collapse_count)
+    (
+        Mesh {
+            vertices,
+            faces: new_faces,
+        },
+        collapse_count,
+    )
 }
 
 /// Resolve a vertex through the collapse map.
@@ -931,7 +938,13 @@ fn flip_edges_for_valence(
         }
     }
 
-    (Mesh { vertices: mesh.vertices.clone(), faces }, flip_count)
+    (
+        Mesh {
+            vertices: mesh.vertices.clone(),
+            faces,
+        },
+        flip_count,
+    )
 }
 
 /// Compute vertex valences (number of edges incident to each vertex).
@@ -1083,11 +1096,7 @@ fn remove_unreferenced_vertices_internal(mesh: &Mesh) -> Mesh {
 
 /// Create a canonical edge key (smaller index first).
 fn canonical_edge(v0: u32, v1: u32) -> (u32, u32) {
-    if v0 < v1 {
-        (v0, v1)
-    } else {
-        (v1, v0)
-    }
+    if v0 < v1 { (v0, v1) } else { (v1, v0) }
 }
 
 // ============================================================================
@@ -1164,7 +1173,8 @@ pub fn detect_feature_edges(mesh: &Mesh, sharp_angle_threshold: f64) -> FeatureE
         let f1 = &mesh.faces[face_indices[0] as usize];
         let f2 = &mesh.faces[face_indices[1] as usize];
 
-        if let (Some(n1), Some(n2)) = (compute_face_normal(mesh, f1), compute_face_normal(mesh, f2)) {
+        if let (Some(n1), Some(n2)) = (compute_face_normal(mesh, f1), compute_face_normal(mesh, f2))
+        {
             let dot = n1.dot(&n2).clamp(-1.0, 1.0);
             let angle = dot.acos();
 
@@ -1333,7 +1343,8 @@ fn compute_vertex_curvature(
 
         for i in 0..2 {
             for j in 0..2 {
-                shape_matrix[(i, j)] += weight * kappa * edge_2d_normalized[i] * edge_2d_normalized[j];
+                shape_matrix[(i, j)] +=
+                    weight * kappa * edge_2d_normalized[i] * edge_2d_normalized[j];
             }
         }
     }
@@ -1347,9 +1358,15 @@ fn compute_vertex_curvature(
 
     // Extract 2x2 submatrix for eigenvalue decomposition
     let shape_2x2 = Matrix3::new(
-        shape_matrix[(0, 0)], shape_matrix[(0, 1)], 0.0,
-        shape_matrix[(1, 0)], shape_matrix[(1, 1)], 0.0,
-        0.0, 0.0, 0.0,
+        shape_matrix[(0, 0)],
+        shape_matrix[(0, 1)],
+        0.0,
+        shape_matrix[(1, 0)],
+        shape_matrix[(1, 1)],
+        0.0,
+        0.0,
+        0.0,
+        0.0,
     );
 
     // Compute eigenvalues (principal curvatures) using 2x2 formula
@@ -1511,7 +1528,9 @@ pub fn remesh_adaptive(mesh: &Mesh, params: &RemeshParams) -> RemeshResult {
         .target_edge_length
         .unwrap_or_else(|| compute_average_edge_length(mesh));
 
-    let min_adaptive = params.min_edge_length_adaptive.unwrap_or(base_target * 0.25);
+    let min_adaptive = params
+        .min_edge_length_adaptive
+        .unwrap_or(base_target * 0.25);
     let max_adaptive = params.max_edge_length_adaptive.unwrap_or(base_target * 2.0);
 
     // Compute per-vertex target edge lengths based on curvature
@@ -1581,10 +1600,8 @@ pub fn remesh_adaptive(mesh: &Mesh, params: &RemeshParams) -> RemeshResult {
         } else {
             HashSet::new()
         };
-        let boundary_vertices: HashSet<u32> = boundary_edges
-            .iter()
-            .flat_map(|&(a, b)| [a, b])
-            .collect();
+        let boundary_vertices: HashSet<u32> =
+            boundary_edges.iter().flat_map(|&(a, b)| [a, b]).collect();
 
         // Step 2: Collapse short edges (adaptive)
         let (new_mesh, collapses) = collapse_short_edges_adaptive(
@@ -1603,7 +1620,8 @@ pub fn remesh_adaptive(mesh: &Mesh, params: &RemeshParams) -> RemeshResult {
         let adj = MeshAdjacency::build(&current_mesh.faces);
 
         // Step 3: Flip edges to improve valence
-        let (new_mesh, flips) = flip_edges_for_valence(&current_mesh, &adj, &boundary_edges, &sharp_edges);
+        let (new_mesh, flips) =
+            flip_edges_for_valence(&current_mesh, &adj, &boundary_edges, &sharp_edges);
         current_mesh = new_mesh;
         total_flips += flips;
 
@@ -1653,22 +1671,26 @@ fn compute_adaptive_edge_lengths(
     curv_min: f64,
     curv_max: f64,
 ) -> Vec<f64> {
-    curvature.vertex_curvatures.iter().map(|vc| {
-        let curv = vc.mean.abs();
+    curvature
+        .vertex_curvatures
+        .iter()
+        .map(|vc| {
+            let curv = vc.mean.abs();
 
-        // Clamp curvature to threshold range
-        let curv_clamped = curv.clamp(curv_min, curv_max);
+            // Clamp curvature to threshold range
+            let curv_clamped = curv.clamp(curv_min, curv_max);
 
-        // Linear interpolation: high curvature -> small edges, low curvature -> large edges
-        let t = if curv_max > curv_min {
-            (curv_clamped - curv_min) / (curv_max - curv_min)
-        } else {
-            0.5
-        };
+            // Linear interpolation: high curvature -> small edges, low curvature -> large edges
+            let t = if curv_max > curv_min {
+                (curv_clamped - curv_min) / (curv_max - curv_min)
+            } else {
+                0.5
+            };
 
-        // Interpolate between max_length (flat) and min_length (curved)
-        max_length + (min_length - max_length) * t
-    }).collect()
+            // Interpolate between max_length (flat) and min_length (curved)
+            max_length + (min_length - max_length) * t
+        })
+        .collect()
 }
 
 /// Split edges that are longer than their adaptive target.
@@ -1872,7 +1894,13 @@ fn collapse_short_edges_adaptive(
         }
     }
 
-    (Mesh { vertices, faces: new_faces }, collapse_count)
+    (
+        Mesh {
+            vertices,
+            faces: new_faces,
+        },
+        collapse_count,
+    )
 }
 
 // ============================================================================
@@ -1939,14 +1967,18 @@ pub fn remesh_anisotropic(mesh: &Mesh, params: &RemeshParams) -> RemeshResult {
     let curvature_result = compute_curvature(mesh);
 
     // Build direction field (either from params or computed from curvature)
-    let direction_field: HashMap<u32, Vector3<f64>> = if let Some(ref custom_field) = params.direction_field {
-        custom_field.clone()
-    } else {
-        // Use principal curvature directions
-        curvature_result.vertex_curvatures.iter().enumerate().map(|(i, vc)| {
-            (i as u32, vc.dir1)
-        }).collect()
-    };
+    let direction_field: HashMap<u32, Vector3<f64>> =
+        if let Some(ref custom_field) = params.direction_field {
+            custom_field.clone()
+        } else {
+            // Use principal curvature directions
+            curvature_result
+                .vertex_curvatures
+                .iter()
+                .enumerate()
+                .map(|(i, vc)| (i as u32, vc.dir1))
+                .collect()
+        };
 
     let mut current_mesh = mesh.clone();
     let mut total_splits = 0;
@@ -1988,7 +2020,8 @@ pub fn remesh_anisotropic(mesh: &Mesh, params: &RemeshParams) -> RemeshResult {
         // Rebuild adjacency and direction field
         let adj = MeshAdjacency::build(&current_mesh.faces);
         let curvature_result = compute_curvature(&current_mesh);
-        let direction_field: HashMap<u32, Vector3<f64>> = curvature_result.vertex_curvatures
+        let direction_field: HashMap<u32, Vector3<f64>> = curvature_result
+            .vertex_curvatures
             .iter()
             .enumerate()
             .map(|(i, vc)| (i as u32, vc.dir1))
@@ -1999,10 +2032,8 @@ pub fn remesh_anisotropic(mesh: &Mesh, params: &RemeshParams) -> RemeshResult {
         } else {
             HashSet::new()
         };
-        let boundary_vertices: HashSet<u32> = boundary_edges
-            .iter()
-            .flat_map(|&(a, b)| [a, b])
-            .collect();
+        let boundary_vertices: HashSet<u32> =
+            boundary_edges.iter().flat_map(|&(a, b)| [a, b]).collect();
 
         // Anisotropic edge collapsing
         let (new_mesh, collapses) = collapse_short_edges_anisotropic(
@@ -2096,8 +2127,14 @@ fn split_long_edges_anisotropic(
         }
 
         // Get direction at edge midpoint (average of endpoint directions)
-        let dir0 = direction_field.get(&v0).copied().unwrap_or(Vector3::new(1.0, 0.0, 0.0));
-        let dir1 = direction_field.get(&v1).copied().unwrap_or(Vector3::new(1.0, 0.0, 0.0));
+        let dir0 = direction_field
+            .get(&v0)
+            .copied()
+            .unwrap_or(Vector3::new(1.0, 0.0, 0.0));
+        let dir1 = direction_field
+            .get(&v1)
+            .copied()
+            .unwrap_or(Vector3::new(1.0, 0.0, 0.0));
         let avg_dir = (dir0 + dir1).normalize();
 
         // Compute edge alignment with principal direction
@@ -2223,8 +2260,14 @@ fn collapse_short_edges_anisotropic(
                 return None;
             }
 
-            let dir0 = direction_field.get(&v0).copied().unwrap_or(Vector3::new(1.0, 0.0, 0.0));
-            let dir1 = direction_field.get(&v1).copied().unwrap_or(Vector3::new(1.0, 0.0, 0.0));
+            let dir0 = direction_field
+                .get(&v0)
+                .copied()
+                .unwrap_or(Vector3::new(1.0, 0.0, 0.0));
+            let dir1 = direction_field
+                .get(&v1)
+                .copied()
+                .unwrap_or(Vector3::new(1.0, 0.0, 0.0));
             let avg_dir = (dir0 + dir1).normalize();
 
             let edge_dir = edge_vec / length;
@@ -2296,7 +2339,13 @@ fn collapse_short_edges_anisotropic(
         }
     }
 
-    (Mesh { vertices, faces: new_faces }, collapse_count)
+    (
+        Mesh {
+            vertices,
+            faces: new_faces,
+        },
+        collapse_count,
+    )
 }
 
 /// Flip edges to improve alignment with direction field.
@@ -2358,19 +2407,24 @@ fn flip_edges_for_anisotropy(
         let new_alignment = new_edge.dot(&avg_dir).abs();
 
         // Flip if new edge is better aligned with direction field
-        if new_alignment > current_alignment + 0.1
-            && is_valid_flip(mesh, v0, v1, opp0, opp1) {
-                let new_face0 = [opp0, opp1, v0];
-                let new_face1 = [opp1, opp0, v1];
+        if new_alignment > current_alignment + 0.1 && is_valid_flip(mesh, v0, v1, opp0, opp1) {
+            let new_face0 = [opp0, opp1, v0];
+            let new_face1 = [opp1, opp0, v1];
 
-                faces[fi0] = new_face0;
-                faces[fi1] = new_face1;
+            faces[fi0] = new_face0;
+            faces[fi1] = new_face1;
 
-                flip_count += 1;
-            }
+            flip_count += 1;
+        }
     }
 
-    (Mesh { vertices: mesh.vertices.clone(), faces }, flip_count)
+    (
+        Mesh {
+            vertices: mesh.vertices.clone(),
+            faces,
+        },
+        flip_count,
+    )
 }
 
 /// Perform isotropic remeshing with progress reporting.
@@ -2488,14 +2542,17 @@ pub fn remesh_isotropic_with_progress(
             HashSet::new()
         };
 
-        let _boundary_vertices: HashSet<u32> = boundary_edges
-            .iter()
-            .flat_map(|&(a, b)| [a, b])
-            .collect();
+        let _boundary_vertices: HashSet<u32> =
+            boundary_edges.iter().flat_map(|&(a, b)| [a, b]).collect();
 
         // Step 1: Split long edges
-        let (new_mesh, splits) =
-            split_long_edges(&current_mesh, &adj, max_length, &boundary_edges, &sharp_edges);
+        let (new_mesh, splits) = split_long_edges(
+            &current_mesh,
+            &adj,
+            max_length,
+            &boundary_edges,
+            &sharp_edges,
+        );
         current_mesh = new_mesh;
         total_splits += splits;
 
@@ -2506,10 +2563,8 @@ pub fn remesh_isotropic_with_progress(
         } else {
             HashSet::new()
         };
-        let boundary_vertices: HashSet<u32> = boundary_edges
-            .iter()
-            .flat_map(|&(a, b)| [a, b])
-            .collect();
+        let boundary_vertices: HashSet<u32> =
+            boundary_edges.iter().flat_map(|&(a, b)| [a, b]).collect();
 
         // Step 2: Collapse short edges
         let (new_mesh, collapses) = collapse_short_edges(
@@ -2527,7 +2582,8 @@ pub fn remesh_isotropic_with_progress(
         let adj = MeshAdjacency::build(&current_mesh.faces);
 
         // Step 3: Flip edges to improve valence
-        let (new_mesh, flips) = flip_edges_for_valence(&current_mesh, &adj, &boundary_edges, &sharp_edges);
+        let (new_mesh, flips) =
+            flip_edges_for_valence(&current_mesh, &adj, &boundary_edges, &sharp_edges);
         current_mesh = new_mesh;
         total_flips += flips;
 
@@ -2603,10 +2659,7 @@ mod tests {
                 Vertex::from_coords(5.0, 8.66, 0.0),
                 Vertex::from_coords(5.0, -8.66, 0.0),
             ],
-            faces: vec![
-                [0, 1, 2],
-                [0, 3, 1],
-            ],
+            faces: vec![[0, 1, 2], [0, 3, 1]],
         }
     }
 
@@ -2619,10 +2672,7 @@ mod tests {
                 Vertex::from_coords(10.0, 10.0, 0.0),
                 Vertex::from_coords(0.0, 10.0, 0.0),
             ],
-            faces: vec![
-                [0, 1, 2],
-                [0, 2, 3],
-            ],
+            faces: vec![[0, 1, 2], [0, 2, 3]],
         }
     }
 
@@ -2876,7 +2926,10 @@ mod tests {
         let result = detect_feature_edges(&mesh, std::f64::consts::PI / 4.0);
 
         // The shared edge should be detected as sharp (90 degree angle)
-        assert!(!result.sharp_edges.is_empty(), "Should detect the sharp edge");
+        assert!(
+            !result.sharp_edges.is_empty(),
+            "Should detect the sharp edge"
+        );
     }
 
     #[test]
@@ -2956,16 +3009,10 @@ mod tests {
             let dir2_len = vc.dir2.norm();
 
             if dir1_len > 0.0 {
-                assert!(
-                    (dir1_len - 1.0).abs() < 1e-6,
-                    "dir1 should be normalized"
-                );
+                assert!((dir1_len - 1.0).abs() < 1e-6, "dir1 should be normalized");
             }
             if dir2_len > 0.0 {
-                assert!(
-                    (dir2_len - 1.0).abs() < 1e-6,
-                    "dir2 should be normalized"
-                );
+                assert!((dir2_len - 1.0).abs() < 1e-6, "dir2 should be normalized");
             }
         }
     }
@@ -3010,8 +3057,7 @@ mod tests {
 
     #[test]
     fn test_remesh_adaptive_curvature_thresholds() {
-        let params = RemeshParams::adaptive(2.0)
-            .with_curvature_thresholds(0.001, 2.0);
+        let params = RemeshParams::adaptive(2.0).with_curvature_thresholds(0.001, 2.0);
 
         assert_eq!(params.curvature_min_threshold, 0.001);
         assert_eq!(params.curvature_max_threshold, 2.0);
@@ -3019,8 +3065,7 @@ mod tests {
 
     #[test]
     fn test_remesh_adaptive_edge_range() {
-        let params = RemeshParams::adaptive(2.0)
-            .with_adaptive_edge_range(0.5, 4.0);
+        let params = RemeshParams::adaptive(2.0).with_adaptive_edge_range(0.5, 4.0);
 
         assert_eq!(params.min_edge_length_adaptive, Some(0.5));
         assert_eq!(params.max_edge_length_adaptive, Some(4.0));
@@ -3076,8 +3121,7 @@ mod tests {
             field.insert(i as u32, Vector3::new(1.0, 0.0, 0.0));
         }
 
-        let params = RemeshParams::anisotropic_with_ratio(2.0, 2.0)
-            .with_direction_field(field);
+        let params = RemeshParams::anisotropic_with_ratio(2.0, 2.0).with_direction_field(field);
 
         let result = remesh_isotropic(&mesh, &params);
 
@@ -3090,16 +3134,14 @@ mod tests {
 
     #[test]
     fn test_remesh_params_with_curvature_adaptation() {
-        let params = RemeshParams::with_target_edge_length(2.0)
-            .with_curvature_adaptation();
+        let params = RemeshParams::with_target_edge_length(2.0).with_curvature_adaptation();
 
         assert!(params.adaptive_to_curvature);
     }
 
     #[test]
     fn test_remesh_params_with_anisotropy() {
-        let params = RemeshParams::with_target_edge_length(2.0)
-            .with_anisotropy(4.0);
+        let params = RemeshParams::with_target_edge_length(2.0).with_anisotropy(4.0);
 
         assert!(params.anisotropic);
         assert_eq!(params.anisotropy_ratio, 4.0);
@@ -3113,8 +3155,7 @@ mod tests {
         edges.insert((0, 1));
         edges.insert((1, 2));
 
-        let params = RemeshParams::default()
-            .with_feature_edges(edges.clone());
+        let params = RemeshParams::default().with_feature_edges(edges.clone());
 
         assert!(params.preserve_feature_edges.is_some());
         assert_eq!(params.preserve_feature_edges.unwrap().len(), 2);

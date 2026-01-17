@@ -249,20 +249,53 @@ impl std::fmt::Debug for DensityMap {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DensityMap::Uniform(d) => write!(f, "Uniform({})", d),
-            DensityMap::Gradient { from, from_density, to, to_density } => {
-                write!(f, "Gradient {{ from: {:?}, from_density: {}, to: {:?}, to_density: {} }}", from, from_density, to, to_density)
+            DensityMap::Gradient {
+                from,
+                from_density,
+                to,
+                to_density,
+            } => {
+                write!(
+                    f,
+                    "Gradient {{ from: {:?}, from_density: {}, to: {:?}, to_density: {} }}",
+                    from, from_density, to, to_density
+                )
             }
-            DensityMap::Radial { center, inner_radius, inner_density, outer_radius, outer_density } => {
-                write!(f, "Radial {{ center: {:?}, inner_radius: {}, inner_density: {}, outer_radius: {}, outer_density: {} }}",
-                    center, inner_radius, inner_density, outer_radius, outer_density)
+            DensityMap::Radial {
+                center,
+                inner_radius,
+                inner_density,
+                outer_radius,
+                outer_density,
+            } => {
+                write!(
+                    f,
+                    "Radial {{ center: {:?}, inner_radius: {}, inner_density: {}, outer_radius: {}, outer_density: {} }}",
+                    center, inner_radius, inner_density, outer_radius, outer_density
+                )
             }
-            DensityMap::SurfaceDistance { surface_density, core_density, transition_depth } => {
-                write!(f, "SurfaceDistance {{ surface_density: {}, core_density: {}, transition_depth: {} }}",
-                    surface_density, core_density, transition_depth)
+            DensityMap::SurfaceDistance {
+                surface_density,
+                core_density,
+                transition_depth,
+            } => {
+                write!(
+                    f,
+                    "SurfaceDistance {{ surface_density: {}, core_density: {}, transition_depth: {} }}",
+                    surface_density, core_density, transition_depth
+                )
             }
-            DensityMap::StressField { min_density, max_density, stress_exponent, .. } => {
-                write!(f, "StressField {{ min_density: {}, max_density: {}, stress_exponent: {} }}",
-                    min_density, max_density, stress_exponent)
+            DensityMap::StressField {
+                min_density,
+                max_density,
+                stress_exponent,
+                ..
+            } => {
+                write!(
+                    f,
+                    "StressField {{ min_density: {}, max_density: {}, stress_exponent: {} }}",
+                    min_density, max_density, stress_exponent
+                )
             }
             DensityMap::Function(_) => write!(f, "Function(<closure>)"),
         }
@@ -432,7 +465,10 @@ pub struct LatticeResult {
 ///
 /// This creates a lattice mesh that can be combined with a shell for
 /// skin + infill manufacturing.
-pub fn generate_lattice(params: &LatticeParams, bounds: (Point3<f64>, Point3<f64>)) -> LatticeResult {
+pub fn generate_lattice(
+    params: &LatticeParams,
+    bounds: (Point3<f64>, Point3<f64>),
+) -> LatticeResult {
     match params.lattice_type {
         LatticeType::Cubic => generate_cubic_lattice(params, bounds),
         LatticeType::OctetTruss => generate_octet_truss_lattice(params, bounds),
@@ -444,7 +480,10 @@ pub fn generate_lattice(params: &LatticeParams, bounds: (Point3<f64>, Point3<f64
 }
 
 /// Generate a cubic lattice.
-fn generate_cubic_lattice(params: &LatticeParams, bounds: (Point3<f64>, Point3<f64>)) -> LatticeResult {
+fn generate_cubic_lattice(
+    params: &LatticeParams,
+    bounds: (Point3<f64>, Point3<f64>),
+) -> LatticeResult {
     use crate::io::{Beam, BeamLatticeData};
 
     let (min, max) = bounds;
@@ -459,7 +498,9 @@ fn generate_cubic_lattice(params: &LatticeParams, bounds: (Point3<f64>, Point3<f
 
     // For beam data preservation
     let mut beam_data = if params.preserve_beam_data {
-        Some(BeamLatticeData::new(params.strut_thickness * params.density / 2.0))
+        Some(BeamLatticeData::new(
+            params.strut_thickness * params.density / 2.0,
+        ))
     } else {
         None
     };
@@ -467,10 +508,15 @@ fn generate_cubic_lattice(params: &LatticeParams, bounds: (Point3<f64>, Point3<f
     let mut vertex_map: HashMap<(usize, usize, usize), u32> = HashMap::new();
 
     // Helper to get or insert a beam vertex
-    let mut get_beam_vertex = |beam_data: &mut BeamLatticeData, ix: usize, iy: usize, iz: usize, corner: Point3<f64>| -> u32 {
-        *vertex_map.entry((ix, iy, iz)).or_insert_with(|| {
-            beam_data.add_vertex(corner)
-        })
+    let mut get_beam_vertex = |beam_data: &mut BeamLatticeData,
+                               ix: usize,
+                               iy: usize,
+                               iz: usize,
+                               corner: Point3<f64>|
+     -> u32 {
+        *vertex_map
+            .entry((ix, iy, iz))
+            .or_insert_with(|| beam_data.add_vertex(corner))
     };
 
     // Generate struts for cubic lattice
@@ -478,11 +524,12 @@ fn generate_cubic_lattice(params: &LatticeParams, bounds: (Point3<f64>, Point3<f
     for iz in 0..=cells_z {
         for iy in 0..=cells_y {
             for ix in 0..=cells_x {
-                let corner = min + Vector3::new(
-                    ix as f64 * params.cell_size,
-                    iy as f64 * params.cell_size,
-                    iz as f64 * params.cell_size,
-                );
+                let corner = min
+                    + Vector3::new(
+                        ix as f64 * params.cell_size,
+                        iy as f64 * params.cell_size,
+                        iz as f64 * params.cell_size,
+                    );
 
                 // Get density at this point
                 let density = params
@@ -540,7 +587,9 @@ fn generate_cubic_lattice(params: &LatticeParams, bounds: (Point3<f64>, Point3<f
 
     let cell_count = cells_x * cells_y * cells_z;
     let total_volume = size.x * size.y * size.z;
-    let strut_volume = total_strut_length * std::f64::consts::PI * (params.strut_thickness * params.density / 2.0).powi(2);
+    let strut_volume = total_strut_length
+        * std::f64::consts::PI
+        * (params.strut_thickness * params.density / 2.0).powi(2);
     let actual_density = strut_volume / total_volume;
 
     LatticeResult {
@@ -553,7 +602,10 @@ fn generate_cubic_lattice(params: &LatticeParams, bounds: (Point3<f64>, Point3<f
 }
 
 /// Generate an octet-truss lattice.
-fn generate_octet_truss_lattice(params: &LatticeParams, bounds: (Point3<f64>, Point3<f64>)) -> LatticeResult {
+fn generate_octet_truss_lattice(
+    params: &LatticeParams,
+    bounds: (Point3<f64>, Point3<f64>),
+) -> LatticeResult {
     let (min, max) = bounds;
     let size = max - min;
 
@@ -571,11 +623,12 @@ fn generate_octet_truss_lattice(params: &LatticeParams, bounds: (Point3<f64>, Po
     for iz in 0..cells_z {
         for iy in 0..cells_y {
             for ix in 0..cells_x {
-                let origin = min + Vector3::new(
-                    ix as f64 * params.cell_size,
-                    iy as f64 * params.cell_size,
-                    iz as f64 * params.cell_size,
-                );
+                let origin = min
+                    + Vector3::new(
+                        ix as f64 * params.cell_size,
+                        iy as f64 * params.cell_size,
+                        iz as f64 * params.cell_size,
+                    );
 
                 let density = params
                     .density_map
@@ -599,11 +652,11 @@ fn generate_octet_truss_lattice(params: &LatticeParams, bounds: (Point3<f64>, Po
 
                 // Face centers
                 let face_centers = [
-                    origin + Vector3::new(half_cell, half_cell, 0.0),              // bottom
+                    origin + Vector3::new(half_cell, half_cell, 0.0), // bottom
                     origin + Vector3::new(half_cell, half_cell, params.cell_size), // top
-                    origin + Vector3::new(half_cell, 0.0, half_cell),              // front
+                    origin + Vector3::new(half_cell, 0.0, half_cell), // front
                     origin + Vector3::new(half_cell, params.cell_size, half_cell), // back
-                    origin + Vector3::new(0.0, half_cell, half_cell),              // left
+                    origin + Vector3::new(0.0, half_cell, half_cell), // left
                     origin + Vector3::new(params.cell_size, half_cell, half_cell), // right
                 ];
 
@@ -644,7 +697,9 @@ fn generate_octet_truss_lattice(params: &LatticeParams, bounds: (Point3<f64>, Po
 
     let cell_count = cells_x * cells_y * cells_z;
     let total_volume = size.x * size.y * size.z;
-    let strut_volume = total_strut_length * std::f64::consts::PI * (params.strut_thickness * params.density / 2.0).powi(2);
+    let strut_volume = total_strut_length
+        * std::f64::consts::PI
+        * (params.strut_thickness * params.density / 2.0).powi(2);
     let actual_density = strut_volume / total_volume;
 
     // TODO: Implement beam data preservation for octet-truss lattice
@@ -658,7 +713,10 @@ fn generate_octet_truss_lattice(params: &LatticeParams, bounds: (Point3<f64>, Po
 }
 
 /// Generate a gyroid TPMS lattice.
-fn generate_gyroid_lattice(params: &LatticeParams, bounds: (Point3<f64>, Point3<f64>)) -> LatticeResult {
+fn generate_gyroid_lattice(
+    params: &LatticeParams,
+    bounds: (Point3<f64>, Point3<f64>),
+) -> LatticeResult {
     generate_tpms_lattice(params, bounds, |x, y, z| {
         // Gyroid equation: sin(x)cos(y) + sin(y)cos(z) + sin(z)cos(x) = t
         x.sin() * y.cos() + y.sin() * z.cos() + z.sin() * x.cos()
@@ -666,7 +724,10 @@ fn generate_gyroid_lattice(params: &LatticeParams, bounds: (Point3<f64>, Point3<
 }
 
 /// Generate a Schwarz-P TPMS lattice.
-fn generate_schwarz_p_lattice(params: &LatticeParams, bounds: (Point3<f64>, Point3<f64>)) -> LatticeResult {
+fn generate_schwarz_p_lattice(
+    params: &LatticeParams,
+    bounds: (Point3<f64>, Point3<f64>),
+) -> LatticeResult {
     generate_tpms_lattice(params, bounds, |x, y, z| {
         // Schwarz-P equation: cos(x) + cos(y) + cos(z) = t
         x.cos() + y.cos() + z.cos()
@@ -674,7 +735,10 @@ fn generate_schwarz_p_lattice(params: &LatticeParams, bounds: (Point3<f64>, Poin
 }
 
 /// Generate a diamond TPMS lattice.
-fn generate_diamond_lattice(params: &LatticeParams, bounds: (Point3<f64>, Point3<f64>)) -> LatticeResult {
+fn generate_diamond_lattice(
+    params: &LatticeParams,
+    bounds: (Point3<f64>, Point3<f64>),
+) -> LatticeResult {
     generate_tpms_lattice(params, bounds, |x, y, z| {
         // Diamond equation: sin(x)sin(y)sin(z) + sin(x)cos(y)cos(z) + cos(x)sin(y)cos(z) + cos(x)cos(y)sin(z) = t
         x.sin() * y.sin() * z.sin()
@@ -724,9 +788,18 @@ where
                 let mut points = [Point3::origin(); 8];
 
                 for (corner_idx, (dix, diy, diz)) in [
-                    (0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0),
-                    (0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1),
-                ].iter().enumerate() {
+                    (0, 0, 0),
+                    (1, 0, 0),
+                    (1, 1, 0),
+                    (0, 1, 0),
+                    (0, 0, 1),
+                    (1, 0, 1),
+                    (1, 1, 1),
+                    (0, 1, 1),
+                ]
+                .iter()
+                .enumerate()
+                {
                     let x = min.x + (ix + dix) as f64 * dx;
                     let y = min.y + (iy + diy) as f64 * dy;
                     let z = min.z + (iz + diz) as f64 * dz;
@@ -788,7 +861,9 @@ where
         }
     }
 
-    let cell_count = ((size.x / params.cell_size) * (size.y / params.cell_size) * (size.z / params.cell_size)) as usize;
+    let cell_count = ((size.x / params.cell_size)
+        * (size.y / params.cell_size)
+        * (size.z / params.cell_size)) as usize;
 
     // TPMS surfaces don't have beam representations
     LatticeResult {
@@ -801,7 +876,10 @@ where
 }
 
 /// Generate a Voronoi lattice (simplified version using random seeds).
-fn generate_voronoi_lattice(params: &LatticeParams, bounds: (Point3<f64>, Point3<f64>)) -> LatticeResult {
+fn generate_voronoi_lattice(
+    params: &LatticeParams,
+    bounds: (Point3<f64>, Point3<f64>),
+) -> LatticeResult {
     // For a proper implementation, we'd use Voronoi tessellation
     // For now, generate a random-looking organic structure using perturbed cubic
     let mut result = generate_cubic_lattice(params, bounds);
@@ -812,13 +890,19 @@ fn generate_voronoi_lattice(params: &LatticeParams, bounds: (Point3<f64>, Point3
 
     for vertex in &mut result.mesh.vertices {
         // Simple LCG random number generator
-        rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        rng_state = rng_state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         let rx = ((rng_state >> 33) as f64 / u32::MAX as f64 - 0.5) * params.cell_size * 0.2;
 
-        rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        rng_state = rng_state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         let ry = ((rng_state >> 33) as f64 / u32::MAX as f64 - 0.5) * params.cell_size * 0.2;
 
-        rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        rng_state = rng_state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         let rz = ((rng_state >> 33) as f64 / u32::MAX as f64 - 0.5) * params.cell_size * 0.2;
 
         vertex.position.x += rx;
@@ -830,7 +914,13 @@ fn generate_voronoi_lattice(params: &LatticeParams, bounds: (Point3<f64>, Point3
 }
 
 /// Add a cylindrical strut between two points.
-fn add_cylindrical_strut(mesh: &mut Mesh, start: Point3<f64>, end: Point3<f64>, radius: f64, segments: usize) {
+fn add_cylindrical_strut(
+    mesh: &mut Mesh,
+    start: Point3<f64>,
+    end: Point3<f64>,
+    radius: f64,
+    segments: usize,
+) {
     let axis = end - start;
     let length = axis.norm();
     if length < 1e-10 || radius < 1e-10 {
@@ -892,9 +982,18 @@ fn add_cylindrical_strut(mesh: &mut Mesh, start: Point3<f64>, end: Point3<f64>, 
 
 /// Edge vertex indices for marching cubes.
 const EDGE_VERTICES: [(usize, usize); 12] = [
-    (0, 1), (1, 2), (2, 3), (3, 0), // Bottom face
-    (4, 5), (5, 6), (6, 7), (7, 4), // Top face
-    (0, 4), (1, 5), (2, 6), (3, 7), // Vertical edges
+    (0, 1),
+    (1, 2),
+    (2, 3),
+    (3, 0), // Bottom face
+    (4, 5),
+    (5, 6),
+    (6, 7),
+    (7, 4), // Top face
+    (0, 4),
+    (1, 5),
+    (2, 6),
+    (3, 7), // Vertical edges
 ];
 
 /// Get triangles for a marching cubes configuration.
@@ -906,29 +1005,67 @@ fn get_marching_cubes_triangles(cube_index: u8) -> &'static [u8] {
         let mut table = [[255u8; 16]; 256];
 
         // Case 1: Single corner inside
-        table[1] = [0, 8, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
-        table[2] = [0, 1, 9, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
-        table[4] = [1, 2, 10, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
-        table[8] = [3, 11, 2, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
-        table[16] = [4, 7, 8, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
-        table[32] = [9, 5, 4, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
-        table[64] = [10, 6, 5, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
-        table[128] = [7, 6, 11, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
+        table[1] = [
+            0, 8, 3, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+        ];
+        table[2] = [
+            0, 1, 9, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+        ];
+        table[4] = [
+            1, 2, 10, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+        ];
+        table[8] = [
+            3, 11, 2, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+        ];
+        table[16] = [
+            4, 7, 8, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+        ];
+        table[32] = [
+            9, 5, 4, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+        ];
+        table[64] = [
+            10, 6, 5, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+        ];
+        table[128] = [
+            7, 6, 11, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+        ];
 
         // Case 3: Two adjacent corners inside (edge)
-        table[3] = [1, 8, 3, 9, 8, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
-        table[5] = [0, 8, 3, 1, 2, 10, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
-        table[6] = [9, 2, 10, 0, 2, 9, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
+        table[3] = [
+            1, 8, 3, 9, 8, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+        ];
+        table[5] = [
+            0, 8, 3, 1, 2, 10, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+        ];
+        table[6] = [
+            9, 2, 10, 0, 2, 9, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+        ];
 
         // Inverse cases (255 - index)
-        table[254] = [0, 3, 8, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
-        table[253] = [0, 9, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
-        table[251] = [1, 10, 2, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
-        table[247] = [3, 2, 11, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
-        table[239] = [4, 8, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
-        table[223] = [9, 4, 5, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
-        table[191] = [10, 5, 6, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
-        table[127] = [7, 11, 6, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
+        table[254] = [
+            0, 3, 8, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+        ];
+        table[253] = [
+            0, 9, 1, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+        ];
+        table[251] = [
+            1, 10, 2, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+        ];
+        table[247] = [
+            3, 2, 11, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+        ];
+        table[239] = [
+            4, 8, 7, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+        ];
+        table[223] = [
+            9, 4, 5, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+        ];
+        table[191] = [
+            10, 5, 6, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+        ];
+        table[127] = [
+            7, 11, 6, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+        ];
 
         table
     };
@@ -973,9 +1110,9 @@ impl Default for InfillParams {
     fn default() -> Self {
         Self {
             lattice: LatticeParams::default(),
-            shell_thickness: 1.2,  // Typical FDM shell thickness
+            shell_thickness: 1.2, // Typical FDM shell thickness
             shell_layers: 3,
-            infill_percentage: 0.2,  // 20% infill
+            infill_percentage: 0.2, // 20% infill
             connect_to_shell: true,
             connection_thickness: 0.4,
             solid_caps: true,
@@ -1176,7 +1313,8 @@ pub fn generate_infill(mesh: &Mesh, params: &InfillParams) -> InfillResult {
 
     // Calculate volumes
     let shell_vol = estimate_volume(&shell);
-    let lattice_vol = lattice_result.actual_density * estimate_interior_volume(mesh, params.shell_thickness);
+    let lattice_vol =
+        lattice_result.actual_density * estimate_interior_volume(mesh, params.shell_thickness);
     let interior_vol = estimate_interior_volume(mesh, params.shell_thickness);
 
     InfillResult {
@@ -1224,7 +1362,7 @@ fn generate_shell(mesh: &Mesh, thickness: f64) -> Mesh {
     for face in &mesh.faces {
         shell.faces.push([
             face[0] + outer_vert_count,
-            face[2] + outer_vert_count,  // Reversed winding
+            face[2] + outer_vert_count, // Reversed winding
             face[1] + outer_vert_count,
         ]);
     }
@@ -1326,17 +1464,23 @@ fn trim_lattice_to_interior(lattice: Mesh, mesh: &Mesh, shell_thickness: f64) ->
             let new_face: [u32; 3] = [
                 *vertex_map.entry(face[0]).or_insert_with(|| {
                     let idx = result.vertices.len() as u32;
-                    result.vertices.push(lattice.vertices[face[0] as usize].clone());
+                    result
+                        .vertices
+                        .push(lattice.vertices[face[0] as usize].clone());
                     idx
                 }),
                 *vertex_map.entry(face[1]).or_insert_with(|| {
                     let idx = result.vertices.len() as u32;
-                    result.vertices.push(lattice.vertices[face[1] as usize].clone());
+                    result
+                        .vertices
+                        .push(lattice.vertices[face[1] as usize].clone());
                     idx
                 }),
                 *vertex_map.entry(face[2]).or_insert_with(|| {
                     let idx = result.vertices.len() as u32;
-                    result.vertices.push(lattice.vertices[face[2] as usize].clone());
+                    result
+                        .vertices
+                        .push(lattice.vertices[face[2] as usize].clone());
                     idx
                 }),
             ];
@@ -1447,7 +1591,8 @@ fn point_to_triangle_distance(
 
     if normal_len < 1e-10 {
         // Degenerate triangle - use distance to vertices
-        return (point - v0).norm()
+        return (point - v0)
+            .norm()
             .min((point - v1).norm())
             .min((point - v2).norm());
     }
@@ -1522,11 +1667,9 @@ fn combine_shell_and_lattice(shell: &Mesh, lattice: &Mesh) -> Mesh {
 
     // Add lattice faces with offset indices
     for face in &lattice.faces {
-        result.faces.push([
-            face[0] + offset,
-            face[1] + offset,
-            face[2] + offset,
-        ]);
+        result
+            .faces
+            .push([face[0] + offset, face[1] + offset, face[2] + offset]);
     }
 
     result
@@ -1807,12 +1950,18 @@ mod tests {
 
         // 12 faces (2 per side) with outward normals
         let faces = [
-            [0, 2, 1], [0, 3, 2], // Front (-Z)
-            [4, 5, 6], [4, 6, 7], // Back (+Z)
-            [3, 7, 6], [3, 6, 2], // Top (+Y)
-            [0, 1, 5], [0, 5, 4], // Bottom (-Y)
-            [0, 4, 7], [0, 7, 3], // Left (-X)
-            [1, 2, 6], [1, 6, 5], // Right (+X)
+            [0, 2, 1],
+            [0, 3, 2], // Front (-Z)
+            [4, 5, 6],
+            [4, 6, 7], // Back (+Z)
+            [3, 7, 6],
+            [3, 6, 2], // Top (+Y)
+            [0, 1, 5],
+            [0, 5, 4], // Bottom (-Y)
+            [0, 4, 7],
+            [0, 7, 3], // Left (-X)
+            [1, 2, 6],
+            [1, 6, 5], // Right (+X)
         ];
 
         for f in &faces {
@@ -1920,8 +2069,7 @@ mod tests {
     fn test_generate_infill_hollow() {
         let cube = create_test_cube(Point3::new(5.0, 5.0, 5.0), 10.0);
 
-        let params = InfillParams::with_percentage(0.0)
-            .with_shell_thickness(1.0);
+        let params = InfillParams::with_percentage(0.0).with_shell_thickness(1.0);
         let result = generate_infill(&cube, &params);
 
         // Hollow should have shell but no lattice
@@ -2004,9 +2152,15 @@ mod tests {
         shell.faces.push([0, 1, 2]);
 
         let mut lattice = Mesh::new();
-        lattice.vertices.push(Vertex::new(Point3::new(0.3, 0.3, 0.1)));
-        lattice.vertices.push(Vertex::new(Point3::new(0.7, 0.3, 0.1)));
-        lattice.vertices.push(Vertex::new(Point3::new(0.5, 0.7, 0.1)));
+        lattice
+            .vertices
+            .push(Vertex::new(Point3::new(0.3, 0.3, 0.1)));
+        lattice
+            .vertices
+            .push(Vertex::new(Point3::new(0.7, 0.3, 0.1)));
+        lattice
+            .vertices
+            .push(Vertex::new(Point3::new(0.5, 0.7, 0.1)));
         lattice.faces.push([0, 1, 2]);
 
         let combined = combine_shell_and_lattice(&shell, &lattice);
@@ -2041,22 +2195,35 @@ mod tests {
         // Create a simple stress field that increases with X coordinate
         let stress_map = DensityMap::from_stress_field(
             |point| (point.x / 10.0).clamp(0.0, 1.0), // Stress from 0 to 1 as x goes 0 to 10
-            0.1, // min density
-            0.9, // max density
+            0.1,                                      // min density
+            0.9,                                      // max density
         );
 
         // At x=0, stress=0, density should be min
         let density_at_zero = stress_map.evaluate(Point3::new(0.0, 5.0, 5.0));
-        assert!((density_at_zero - 0.1).abs() < 1e-6, "Expected 0.1, got {}", density_at_zero);
+        assert!(
+            (density_at_zero - 0.1).abs() < 1e-6,
+            "Expected 0.1, got {}",
+            density_at_zero
+        );
 
         // At x=10, stress=1, density should be max
         let density_at_max = stress_map.evaluate(Point3::new(10.0, 5.0, 5.0));
-        assert!((density_at_max - 0.9).abs() < 1e-6, "Expected 0.9, got {}", density_at_max);
+        assert!(
+            (density_at_max - 0.9).abs() < 1e-6,
+            "Expected 0.9, got {}",
+            density_at_max
+        );
 
         // At x=5, stress=0.5, density should be midpoint
         let density_at_mid = stress_map.evaluate(Point3::new(5.0, 5.0, 5.0));
         let expected_mid = 0.1 + 0.5 * (0.9 - 0.1); // 0.5
-        assert!((density_at_mid - expected_mid).abs() < 1e-6, "Expected {}, got {}", expected_mid, density_at_mid);
+        assert!(
+            (density_at_mid - expected_mid).abs() < 1e-6,
+            "Expected {}, got {}",
+            expected_mid,
+            density_at_mid
+        );
     }
 
     #[test]
@@ -2072,7 +2239,12 @@ mod tests {
         // At x=5 (stress=0.5), with exponent=2, mapped_stress = 0.25
         let density_at_mid = stress_map.evaluate(Point3::new(5.0, 0.0, 0.0));
         let expected = 0.0 + 0.25 * (1.0 - 0.0); // 0.25
-        assert!((density_at_mid - expected).abs() < 1e-6, "Expected {}, got {}", expected, density_at_mid);
+        assert!(
+            (density_at_mid - expected).abs() < 1e-6,
+            "Expected {}, got {}",
+            expected,
+            density_at_mid
+        );
 
         // At x=10 (stress=1.0), mapped_stress = 1.0
         let density_at_max = stress_map.evaluate(Point3::new(10.0, 0.0, 0.0));

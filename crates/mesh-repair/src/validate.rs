@@ -3,9 +3,9 @@
 use nalgebra::Point3;
 use tracing::{debug, info, warn};
 
+use crate::Mesh;
 use crate::adjacency::MeshAdjacency;
 use crate::error::{MeshError, MeshResult, ValidationIssue};
-use crate::Mesh;
 
 /// Validation report for a mesh.
 #[derive(Debug, Clone)]
@@ -93,7 +93,11 @@ impl std::fmt::Display for MeshReport {
         }
 
         writeln!(f, "  Surface Area: {:.2}", self.surface_area)?;
-        writeln!(f, "  Volume: {:.2} (signed: {:.2})", self.volume, self.signed_volume)?;
+        writeln!(
+            f,
+            "  Volume: {:.2} (signed: {:.2})",
+            self.volume, self.signed_volume
+        )?;
 
         writeln!(
             f,
@@ -112,7 +116,11 @@ impl std::fmt::Display for MeshReport {
         writeln!(
             f,
             "  Orientation: {}",
-            if self.is_inside_out { "INSIDE-OUT" } else { "correct" }
+            if self.is_inside_out {
+                "INSIDE-OUT"
+            } else {
+                "correct"
+            }
         )?;
 
         writeln!(
@@ -192,19 +200,34 @@ pub fn log_validation(report: &MeshReport) {
         "Mesh: {} verts, {} faces, {}x{}x{}",
         report.vertex_count,
         report.face_count,
-        report.dimensions.map(|d| format!("{:.1}", d.0)).unwrap_or_default(),
-        report.dimensions.map(|d| format!("{:.1}", d.1)).unwrap_or_default(),
-        report.dimensions.map(|d| format!("{:.1}", d.2)).unwrap_or_default(),
+        report
+            .dimensions
+            .map(|d| format!("{:.1}", d.0))
+            .unwrap_or_default(),
+        report
+            .dimensions
+            .map(|d| format!("{:.1}", d.1))
+            .unwrap_or_default(),
+        report
+            .dimensions
+            .map(|d| format!("{:.1}", d.2))
+            .unwrap_or_default(),
     );
 
     if report.is_printable() {
         info!("Mesh is watertight and manifold (printable)");
     } else {
         if !report.is_watertight {
-            warn!("Not watertight: {} boundary edges", report.boundary_edge_count);
+            warn!(
+                "Not watertight: {} boundary edges",
+                report.boundary_edge_count
+            );
         }
         if !report.is_manifold {
-            warn!("Not manifold: {} non-manifold edges", report.non_manifold_edge_count);
+            warn!(
+                "Not manifold: {} non-manifold edges",
+                report.non_manifold_edge_count
+            );
         }
     }
 }
@@ -315,7 +338,10 @@ impl std::fmt::Display for DataValidationResult {
 ///     Err(e) => println!("Validation failed: {}", e),
 /// }
 /// ```
-pub fn validate_mesh_data(mesh: &Mesh, options: &ValidationOptions) -> MeshResult<DataValidationResult> {
+pub fn validate_mesh_data(
+    mesh: &Mesh,
+    options: &ValidationOptions,
+) -> MeshResult<DataValidationResult> {
     let mut issues = Vec::new();
     let mut invalid_index_count = 0;
     let mut nan_count = 0;
@@ -398,7 +424,10 @@ pub fn validate_mesh_data(mesh: &Mesh, options: &ValidationOptions) -> MeshResul
     if !issues.is_empty() {
         warn!(
             "Mesh data validation found {} issue(s): {} invalid indices, {} NaN, {} Inf",
-            issues.len(), invalid_index_count, nan_count, infinity_count
+            issues.len(),
+            invalid_index_count,
+            nan_count,
+            infinity_count
         );
     } else {
         debug!("Mesh data validation passed");
@@ -431,7 +460,8 @@ mod tests {
         mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 0.0)); // 0
         mesh.vertices.push(Vertex::from_coords(1.0, 0.0, 0.0)); // 1
         mesh.vertices.push(Vertex::from_coords(0.5, 0.866025, 0.0)); // 2 (approx sqrt(3)/2)
-        mesh.vertices.push(Vertex::from_coords(0.5, 0.288675, 0.816497)); // 3 (apex)
+        mesh.vertices
+            .push(Vertex::from_coords(0.5, 0.288675, 0.816497)); // 3 (apex)
 
         // Faces with outward normals (CCW from outside)
         mesh.faces.push([0, 2, 1]); // Bottom face
@@ -475,7 +505,7 @@ mod tests {
 
         assert!(report.is_valid());
         assert!(!report.is_watertight); // Has boundary edges
-        assert!(report.is_manifold);    // No edge has >2 faces (manifold allows boundaries)
+        assert!(report.is_manifold); // No edge has >2 faces (manifold allows boundaries)
         assert!(!report.is_printable()); // Not printable because not watertight
         assert_eq!(report.boundary_edge_count, 3);
         assert_eq!(report.component_count, 1);
@@ -490,7 +520,8 @@ mod tests {
         mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 0.0)); // 0
         mesh.vertices.push(Vertex::from_coords(1.0, 0.0, 0.0)); // 1
         mesh.vertices.push(Vertex::from_coords(0.5, 0.866025, 0.0)); // 2
-        mesh.vertices.push(Vertex::from_coords(0.5, 0.288675, 0.816497)); // 3
+        mesh.vertices
+            .push(Vertex::from_coords(0.5, 0.288675, 0.816497)); // 3
 
         // Inverted winding (swap indices to reverse normal direction)
         mesh.faces.push([0, 1, 2]); // Bottom face - inverted
@@ -549,7 +580,11 @@ mod tests {
         assert!(result.is_err());
 
         match result.unwrap_err() {
-            MeshError::InvalidVertexIndex { face_index, vertex_index, vertex_count } => {
+            MeshError::InvalidVertexIndex {
+                face_index,
+                vertex_index,
+                vertex_count,
+            } => {
                 assert_eq!(face_index, 0);
                 assert_eq!(vertex_index, 10);
                 assert_eq!(vertex_count, 3);
@@ -588,7 +623,11 @@ mod tests {
         assert!(result.is_err());
 
         match result.unwrap_err() {
-            MeshError::InvalidCoordinate { vertex_index, coordinate, value } => {
+            MeshError::InvalidCoordinate {
+                vertex_index,
+                coordinate,
+                value,
+            } => {
                 assert_eq!(vertex_index, 0);
                 assert_eq!(coordinate, "x");
                 assert!(value.is_nan());
@@ -600,7 +639,8 @@ mod tests {
     #[test]
     fn test_validate_nan_coordinate_collect() {
         let mut mesh = Mesh::new();
-        mesh.vertices.push(Vertex::from_coords(f64::NAN, f64::NAN, 0.0));
+        mesh.vertices
+            .push(Vertex::from_coords(f64::NAN, f64::NAN, 0.0));
         mesh.vertices.push(Vertex::from_coords(1.0, f64::NAN, 0.0));
         mesh.vertices.push(Vertex::from_coords(0.0, 1.0, 0.0));
         mesh.faces.push([0, 1, 2]);
@@ -614,7 +654,8 @@ mod tests {
     #[test]
     fn test_validate_infinity_coordinate_strict() {
         let mut mesh = Mesh::new();
-        mesh.vertices.push(Vertex::from_coords(f64::INFINITY, 0.0, 0.0));
+        mesh.vertices
+            .push(Vertex::from_coords(f64::INFINITY, 0.0, 0.0));
         mesh.vertices.push(Vertex::from_coords(1.0, 0.0, 0.0));
         mesh.vertices.push(Vertex::from_coords(0.0, 1.0, 0.0));
         mesh.faces.push([0, 1, 2]);
@@ -623,7 +664,11 @@ mod tests {
         assert!(result.is_err());
 
         match result.unwrap_err() {
-            MeshError::InvalidCoordinate { vertex_index, coordinate, value } => {
+            MeshError::InvalidCoordinate {
+                vertex_index,
+                coordinate,
+                value,
+            } => {
                 assert_eq!(vertex_index, 0);
                 assert_eq!(coordinate, "x");
                 assert!(value.is_infinite());
@@ -635,7 +680,8 @@ mod tests {
     #[test]
     fn test_validate_negative_infinity_coordinate() {
         let mut mesh = Mesh::new();
-        mesh.vertices.push(Vertex::from_coords(0.0, f64::NEG_INFINITY, 0.0));
+        mesh.vertices
+            .push(Vertex::from_coords(0.0, f64::NEG_INFINITY, 0.0));
         mesh.vertices.push(Vertex::from_coords(1.0, 0.0, 0.0));
         mesh.vertices.push(Vertex::from_coords(0.0, 1.0, 0.0));
         mesh.faces.push([0, 1, 2]);
@@ -650,7 +696,8 @@ mod tests {
     fn test_validate_multiple_issues_types() {
         let mut mesh = Mesh::new();
         mesh.vertices.push(Vertex::from_coords(f64::NAN, 0.0, 0.0)); // NaN
-        mesh.vertices.push(Vertex::from_coords(1.0, f64::INFINITY, 0.0)); // Infinity
+        mesh.vertices
+            .push(Vertex::from_coords(1.0, f64::INFINITY, 0.0)); // Infinity
         mesh.vertices.push(Vertex::from_coords(0.0, 1.0, 0.0)); // Valid
         mesh.faces.push([0, 1, 99]); // Invalid index
 

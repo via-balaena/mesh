@@ -5,10 +5,10 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use colored::Colorize;
 use mesh_repair::Mesh;
-use mesh_shell::{apply_sdf_offset, generate_shell, SdfOffsetParams, ShellParams};
+use mesh_shell::{SdfOffsetParams, ShellParams, apply_sdf_offset, generate_shell};
 use serde::Serialize;
 
-use crate::{output, Cli, OutputFormat, ShellDirection};
+use crate::{Cli, OutputFormat, ShellDirection, output};
 
 #[derive(Serialize)]
 struct ShellResult {

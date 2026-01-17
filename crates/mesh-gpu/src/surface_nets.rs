@@ -158,13 +158,13 @@ impl SurfaceNetsPipeline {
                 });
 
         // Create pipeline layout
-        let pipeline_layout =
-            ctx.device
-                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("surface_nets_pipeline_layout"),
-                    bind_group_layouts: &[&bind_group_layout],
-                    push_constant_ranges: &[],
-                });
+        let pipeline_layout = ctx
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("surface_nets_pipeline_layout"),
+                bind_group_layouts: &[&bind_group_layout],
+                push_constant_ranges: &[],
+            });
 
         // Create identify_active_cells pipeline
         let identify_pipeline =
@@ -251,13 +251,13 @@ impl SurfaceNetsPipeline {
             _padding: [0.0, 0.0],
         };
 
-        let params_buffer =
-            ctx.device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("surface_nets_params"),
-                    contents: bytemuck::bytes_of(&grid_params),
-                    usage: wgpu::BufferUsages::UNIFORM,
-                });
+        let params_buffer = ctx
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("surface_nets_params"),
+                contents: bytemuck::bytes_of(&grid_params),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
 
         // Create active cells buffer (1 u32 flag per cell: 0 = inactive, 1 = active)
         let active_cells_size = total_cells * std::mem::size_of::<u32>();

@@ -36,7 +36,7 @@ pub struct ThicknessParams {
 impl Default for ThicknessParams {
     fn default() -> Self {
         Self {
-            min_thickness: 1.0, // 1mm default minimum
+            min_thickness: 1.0,       // 1mm default minimum
             max_ray_distance: 1000.0, // 1m max ray distance
             epsilon: 1e-8,
             max_regions: 1000,
@@ -345,11 +345,7 @@ fn ray_triangle_intersect(
 
     let t = f * edge2.dot(&q);
 
-    if t > epsilon {
-        Some(t)
-    } else {
-        None
-    }
+    if t > epsilon { Some(t) } else { None }
 }
 
 /// Trace a ray through the BVH and find the closest intersection.
@@ -381,16 +377,29 @@ fn trace_ray(
                 return None;
             }
 
-            if let Some(t) = ray_triangle_intersect(origin, direction, &triangles[*face_idx], epsilon)
-                && t <= max_dist {
-                    return Some((t, *face_idx));
-                }
+            if let Some(t) =
+                ray_triangle_intersect(origin, direction, &triangles[*face_idx], epsilon)
+                && t <= max_dist
+            {
+                return Some((t, *face_idx));
+            }
             None
         }
         BvhNode::Internal { left, right, .. } => {
-            let hit_left = trace_ray(left, origin, direction, dir_inv, triangles, max_dist, epsilon, skip_faces);
+            let hit_left = trace_ray(
+                left, origin, direction, dir_inv, triangles, max_dist, epsilon, skip_faces,
+            );
             let max_dist_right = hit_left.map(|(t, _)| t).unwrap_or(max_dist);
-            let hit_right = trace_ray(right, origin, direction, dir_inv, triangles, max_dist_right, epsilon, skip_faces);
+            let hit_right = trace_ray(
+                right,
+                origin,
+                direction,
+                dir_inv,
+                triangles,
+                max_dist_right,
+                epsilon,
+                skip_faces,
+            );
 
             match (hit_left, hit_right) {
                 (Some((t1, f1)), Some((t2, f2))) => {
@@ -546,9 +555,21 @@ pub fn analyze_thickness(mesh: &Mesh, params: &ThicknessParams) -> ThicknessResu
 
             // Compute inverse direction for AABB tests
             let dir_inv = Vector3::new(
-                if ray_dir.x.abs() > params.epsilon { 1.0 / ray_dir.x } else { f64::MAX },
-                if ray_dir.y.abs() > params.epsilon { 1.0 / ray_dir.y } else { f64::MAX },
-                if ray_dir.z.abs() > params.epsilon { 1.0 / ray_dir.z } else { f64::MAX },
+                if ray_dir.x.abs() > params.epsilon {
+                    1.0 / ray_dir.x
+                } else {
+                    f64::MAX
+                },
+                if ray_dir.y.abs() > params.epsilon {
+                    1.0 / ray_dir.y
+                } else {
+                    f64::MAX
+                },
+                if ray_dir.z.abs() > params.epsilon {
+                    1.0 / ray_dir.z
+                } else {
+                    f64::MAX
+                },
             );
 
             // Skip faces adjacent to this vertex to avoid self-intersection
@@ -833,20 +854,32 @@ mod tests {
         }
 
         // Outer faces (CCW from outside)
-        mesh.faces.push([0, 2, 1]); mesh.faces.push([0, 3, 2]); // Bottom
-        mesh.faces.push([4, 5, 6]); mesh.faces.push([4, 6, 7]); // Top
-        mesh.faces.push([0, 1, 5]); mesh.faces.push([0, 5, 4]); // Front
-        mesh.faces.push([3, 7, 6]); mesh.faces.push([3, 6, 2]); // Back
-        mesh.faces.push([0, 4, 7]); mesh.faces.push([0, 7, 3]); // Left
-        mesh.faces.push([1, 2, 6]); mesh.faces.push([1, 6, 5]); // Right
+        mesh.faces.push([0, 2, 1]);
+        mesh.faces.push([0, 3, 2]); // Bottom
+        mesh.faces.push([4, 5, 6]);
+        mesh.faces.push([4, 6, 7]); // Top
+        mesh.faces.push([0, 1, 5]);
+        mesh.faces.push([0, 5, 4]); // Front
+        mesh.faces.push([3, 7, 6]);
+        mesh.faces.push([3, 6, 2]); // Back
+        mesh.faces.push([0, 4, 7]);
+        mesh.faces.push([0, 7, 3]); // Left
+        mesh.faces.push([1, 2, 6]);
+        mesh.faces.push([1, 6, 5]); // Right
 
         // Inner faces (CCW from inside = CW from outside, so reversed)
-        mesh.faces.push([8, 9, 10]); mesh.faces.push([8, 10, 11]); // Bottom inner
-        mesh.faces.push([12, 14, 13]); mesh.faces.push([12, 15, 14]); // Top inner
-        mesh.faces.push([8, 13, 9]); mesh.faces.push([8, 12, 13]); // Front inner
-        mesh.faces.push([11, 14, 15]); mesh.faces.push([11, 10, 14]); // Back inner
-        mesh.faces.push([8, 11, 15]); mesh.faces.push([8, 15, 12]); // Left inner
-        mesh.faces.push([9, 13, 14]); mesh.faces.push([9, 14, 10]); // Right inner
+        mesh.faces.push([8, 9, 10]);
+        mesh.faces.push([8, 10, 11]); // Bottom inner
+        mesh.faces.push([12, 14, 13]);
+        mesh.faces.push([12, 15, 14]); // Top inner
+        mesh.faces.push([8, 13, 9]);
+        mesh.faces.push([8, 12, 13]); // Front inner
+        mesh.faces.push([11, 14, 15]);
+        mesh.faces.push([11, 10, 14]); // Back inner
+        mesh.faces.push([8, 11, 15]);
+        mesh.faces.push([8, 15, 12]); // Left inner
+        mesh.faces.push([9, 13, 14]);
+        mesh.faces.push([9, 14, 10]); // Right inner
 
         mesh
     }

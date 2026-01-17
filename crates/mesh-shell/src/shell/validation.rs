@@ -5,8 +5,7 @@
 use tracing::{debug, info, warn};
 
 use mesh_repair::{
-    validate_mesh, Mesh, MeshAdjacency,
-    fix_winding_order, remove_degenerate_triangles_enhanced,
+    Mesh, MeshAdjacency, fix_winding_order, remove_degenerate_triangles_enhanced, validate_mesh,
 };
 
 /// Result of shell validation.
@@ -67,7 +66,11 @@ impl std::fmt::Display for ShellValidationResult {
         writeln!(
             f,
             "  Consistent winding: {}",
-            if self.has_consistent_winding { "yes" } else { "NO" }
+            if self.has_consistent_winding {
+                "yes"
+            } else {
+                "NO"
+            }
         )?;
         writeln!(
             f,
@@ -104,11 +107,23 @@ pub enum ShellIssue {
 impl std::fmt::Display for ShellIssue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ShellIssue::NotWatertight { boundary_edge_count } => {
-                write!(f, "Shell is not watertight ({} boundary edges)", boundary_edge_count)
+            ShellIssue::NotWatertight {
+                boundary_edge_count,
+            } => {
+                write!(
+                    f,
+                    "Shell is not watertight ({} boundary edges)",
+                    boundary_edge_count
+                )
             }
-            ShellIssue::NonManifold { non_manifold_edge_count } => {
-                write!(f, "Shell is not manifold ({} non-manifold edges)", non_manifold_edge_count)
+            ShellIssue::NonManifold {
+                non_manifold_edge_count,
+            } => {
+                write!(
+                    f,
+                    "Shell is not manifold ({} non-manifold edges)",
+                    non_manifold_edge_count
+                )
             }
             ShellIssue::InconsistentWinding => {
                 write!(f, "Shell has inconsistent face winding order")
@@ -150,7 +165,11 @@ impl std::fmt::Display for ShellIssue {
 /// }
 /// ```
 pub fn validate_shell(shell: &Mesh) -> ShellValidationResult {
-    info!("Validating shell mesh ({} vertices, {} faces)", shell.vertex_count(), shell.face_count());
+    info!(
+        "Validating shell mesh ({} vertices, {} faces)",
+        shell.vertex_count(),
+        shell.face_count()
+    );
 
     let mut issues = Vec::new();
 
@@ -178,15 +197,25 @@ pub fn validate_shell(shell: &Mesh) -> ShellValidationResult {
     // Check watertightness
     let is_watertight = boundary_edge_count == 0;
     if !is_watertight {
-        issues.push(ShellIssue::NotWatertight { boundary_edge_count });
-        warn!("Shell is not watertight: {} boundary edges", boundary_edge_count);
+        issues.push(ShellIssue::NotWatertight {
+            boundary_edge_count,
+        });
+        warn!(
+            "Shell is not watertight: {} boundary edges",
+            boundary_edge_count
+        );
     }
 
     // Check manifoldness
     let is_manifold = non_manifold_edge_count == 0;
     if !is_manifold {
-        issues.push(ShellIssue::NonManifold { non_manifold_edge_count });
-        warn!("Shell is not manifold: {} non-manifold edges", non_manifold_edge_count);
+        issues.push(ShellIssue::NonManifold {
+            non_manifold_edge_count,
+        });
+        warn!(
+            "Shell is not manifold: {} non-manifold edges",
+            non_manifold_edge_count
+        );
     }
 
     // Check winding consistency
@@ -199,7 +228,9 @@ pub fn validate_shell(shell: &Mesh) -> ShellValidationResult {
     // Check for degenerate triangles
     let degenerate_count = count_degenerate_triangles(shell);
     if degenerate_count > 0 {
-        issues.push(ShellIssue::DegenerateTriangles { count: degenerate_count });
+        issues.push(ShellIssue::DegenerateTriangles {
+            count: degenerate_count,
+        });
         warn!("Shell has {} degenerate triangles", degenerate_count);
     }
 
@@ -317,7 +348,11 @@ impl std::fmt::Display for ShellRepairResult {
         if self.success {
             writeln!(f, "Shell repair completed successfully:")?;
             if self.degenerate_triangles_removed > 0 {
-                writeln!(f, "  - Removed {} degenerate triangles", self.degenerate_triangles_removed)?;
+                writeln!(
+                    f,
+                    "  - Removed {} degenerate triangles",
+                    self.degenerate_triangles_removed
+                )?;
             }
             if self.faces_with_winding_fixed {
                 writeln!(f, "  - Fixed winding order")?;
@@ -366,8 +401,11 @@ impl std::fmt::Display for ShellRepairResult {
 /// let validation = validate_shell(&shell);
 /// ```
 pub fn repair_shell(shell: &mut Mesh) -> ShellRepairResult {
-    info!("Attempting to repair shell mesh ({} vertices, {} faces)",
-          shell.vertex_count(), shell.face_count());
+    info!(
+        "Attempting to repair shell mesh ({} vertices, {} faces)",
+        shell.vertex_count(),
+        shell.face_count()
+    );
 
     let mut result = ShellRepairResult {
         degenerate_triangles_removed: 0,
@@ -384,10 +422,9 @@ pub fn repair_shell(shell: &mut Mesh) -> ShellRepairResult {
 
     // 1. Remove degenerate triangles
     let removed = remove_degenerate_triangles_enhanced(
-        shell,
-        1e-10,   // area_threshold
-        1000.0,  // max_aspect_ratio
-        1e-9,    // min_edge_length
+        shell, 1e-10,  // area_threshold
+        1000.0, // max_aspect_ratio
+        1e-9,   // min_edge_length
     );
     result.degenerate_triangles_removed = removed;
     if removed > 0 {
@@ -397,7 +434,9 @@ pub fn repair_shell(shell: &mut Mesh) -> ShellRepairResult {
     // Check if we still have faces after removing degenerate triangles
     if shell.faces.is_empty() {
         result.success = false;
-        result.errors.push("All faces were degenerate - shell is now empty".to_string());
+        result
+            .errors
+            .push("All faces were degenerate - shell is now empty".to_string());
         return result;
     }
 
@@ -410,7 +449,9 @@ pub fn repair_shell(shell: &mut Mesh) -> ShellRepairResult {
                 info!("Fixed winding order");
             }
             Err(e) => {
-                result.errors.push(format!("Failed to fix winding order: {}", e));
+                result
+                    .errors
+                    .push(format!("Failed to fix winding order: {}", e));
                 warn!("Failed to fix winding order: {}", e);
             }
         }
@@ -418,8 +459,12 @@ pub fn repair_shell(shell: &mut Mesh) -> ShellRepairResult {
 
     // Log summary
     if result.success {
-        let total_repairs = result.degenerate_triangles_removed +
-            (if result.faces_with_winding_fixed { 1 } else { 0 });
+        let total_repairs = result.degenerate_triangles_removed
+            + (if result.faces_with_winding_fixed {
+                1
+            } else {
+                0
+            });
         if total_repairs > 0 {
             info!("Shell repair completed: {} repairs applied", total_repairs);
         } else {
@@ -454,9 +499,9 @@ pub fn validate_and_repair_shell(
 
     // Check if we can repair (only certain issues are fixable)
     let can_repair = initial_validation.issues.iter().any(|issue| {
-        matches!(issue,
-            ShellIssue::InconsistentWinding |
-            ShellIssue::DegenerateTriangles { .. }
+        matches!(
+            issue,
+            ShellIssue::InconsistentWinding | ShellIssue::DegenerateTriangles { .. }
         )
     });
 
@@ -550,7 +595,12 @@ mod tests {
         assert!(result.is_manifold);
         assert!(!result.is_printable());
         assert!(result.boundary_edge_count > 0);
-        assert!(result.issues.iter().any(|i| matches!(i, ShellIssue::NotWatertight { .. })));
+        assert!(
+            result
+                .issues
+                .iter()
+                .any(|i| matches!(i, ShellIssue::NotWatertight { .. }))
+        );
     }
 
     #[test]
@@ -560,7 +610,12 @@ mod tests {
 
         assert!(!result.is_valid());
         assert!(!result.is_printable());
-        assert!(result.issues.iter().any(|i| matches!(i, ShellIssue::EmptyShell)));
+        assert!(
+            result
+                .issues
+                .iter()
+                .any(|i| matches!(i, ShellIssue::EmptyShell))
+        );
     }
 
     #[test]
@@ -576,7 +631,12 @@ mod tests {
 
         let result = validate_shell(&mesh);
 
-        assert!(result.issues.iter().any(|i| matches!(i, ShellIssue::DegenerateTriangles { .. })));
+        assert!(
+            result
+                .issues
+                .iter()
+                .any(|i| matches!(i, ShellIssue::DegenerateTriangles { .. }))
+        );
     }
 
     #[test]
@@ -594,12 +654,16 @@ mod tests {
 
     #[test]
     fn test_shell_issue_display() {
-        let issue = ShellIssue::NotWatertight { boundary_edge_count: 4 };
+        let issue = ShellIssue::NotWatertight {
+            boundary_edge_count: 4,
+        };
         let output = format!("{}", issue);
         assert!(output.contains("watertight"));
         assert!(output.contains("4"));
 
-        let issue = ShellIssue::NonManifold { non_manifold_edge_count: 2 };
+        let issue = ShellIssue::NonManifold {
+            non_manifold_edge_count: 2,
+        };
         let output = format!("{}", issue);
         assert!(output.contains("manifold"));
         assert!(output.contains("2"));
@@ -703,8 +767,14 @@ mod tests {
         assert!(repair_result.degenerate_triangles_removed > 0);
 
         // Final validation should show the degenerate triangles are gone
-        let has_degenerate_issue = validation.issues.iter().any(|i| matches!(i, ShellIssue::DegenerateTriangles { .. }));
-        assert!(!has_degenerate_issue, "Degenerate triangles should have been removed");
+        let has_degenerate_issue = validation
+            .issues
+            .iter()
+            .any(|i| matches!(i, ShellIssue::DegenerateTriangles { .. }));
+        assert!(
+            !has_degenerate_issue,
+            "Degenerate triangles should have been removed"
+        );
     }
 
     #[test]

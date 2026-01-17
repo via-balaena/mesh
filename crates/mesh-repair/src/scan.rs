@@ -207,7 +207,11 @@ pub fn cleanup_scan(mesh: &Mesh, params: &ScanCleanupParams) -> ScanCleanupResul
                 params.feature_angle_threshold,
             );
         } else {
-            smooth_laplacian(&mut result_mesh, params.smooth_iterations, params.smooth_strength);
+            smooth_laplacian(
+                &mut result_mesh,
+                params.smooth_iterations,
+                params.smooth_strength,
+            );
         }
     }
 
@@ -291,18 +295,12 @@ pub fn denoise_mesh(mesh: &Mesh, params: &DenoiseParams) -> DenoiseResult {
 
     for _ in 0..params.iterations {
         let displacements = match params.method {
-            DenoiseMethod::Laplacian => {
-                compute_laplacian_displacements(&result, params.strength)
-            }
+            DenoiseMethod::Laplacian => compute_laplacian_displacements(&result, params.strength),
             DenoiseMethod::Bilateral => {
                 compute_bilateral_displacements(&result, params.strength, params.feature_threshold)
             }
-            DenoiseMethod::Taubin => {
-                compute_taubin_displacements(&result, params.strength)
-            }
-            DenoiseMethod::MeanCurvatureFlow => {
-                compute_mcf_displacements(&result, params.strength)
-            }
+            DenoiseMethod::Taubin => compute_taubin_displacements(&result, params.strength),
+            DenoiseMethod::MeanCurvatureFlow => compute_mcf_displacements(&result, params.strength),
         };
 
         // Apply displacements
@@ -398,7 +396,9 @@ pub fn fill_holes_advanced(mesh: &Mesh, params: &HoleFillParams) -> HoleFillResu
 
         let added = match params.strategy {
             HoleFillStrategy::Planar => fill_hole_planar(&mut result, &hole),
-            HoleFillStrategy::Smooth => fill_hole_smooth(&mut result, &hole, params.smooth_iterations),
+            HoleFillStrategy::Smooth => {
+                fill_hole_smooth(&mut result, &hole, params.smooth_iterations)
+            }
             HoleFillStrategy::CurvatureBased => fill_hole_curvature(&mut result, &hole),
             HoleFillStrategy::MinimalArea => fill_hole_minimal_area(&mut result, &hole),
         };
@@ -464,7 +464,10 @@ pub fn remove_outliers(mesh: &Mesh, params: &OutlierRemovalParams) -> Mesh {
 
     // Compute mean and std dev
     let mean: f64 = avg_distances.iter().sum::<f64>() / avg_distances.len() as f64;
-    let variance: f64 = avg_distances.iter().map(|d| (d - mean).powi(2)).sum::<f64>()
+    let variance: f64 = avg_distances
+        .iter()
+        .map(|d| (d - mean).powi(2))
+        .sum::<f64>()
         / avg_distances.len() as f64;
     let std_dev = variance.sqrt();
 
@@ -641,8 +644,8 @@ fn remove_spikes(mesh: &mut Mesh, threshold: f64) -> usize {
 
     // Compute statistics
     let mean: f64 = edge_lengths.iter().sum::<f64>() / edge_lengths.len() as f64;
-    let variance: f64 = edge_lengths.iter().map(|l| (l - mean).powi(2)).sum::<f64>()
-        / edge_lengths.len() as f64;
+    let variance: f64 =
+        edge_lengths.iter().map(|l| (l - mean).powi(2)).sum::<f64>() / edge_lengths.len() as f64;
     let std_dev = variance.sqrt();
 
     let max_length = mean + threshold * std_dev;
@@ -868,7 +871,12 @@ fn smooth_laplacian(mesh: &mut Mesh, iterations: usize, strength: f64) {
 }
 
 /// Feature-preserving smoothing.
-fn smooth_preserve_features(mesh: &mut Mesh, iterations: usize, strength: f64, feature_threshold: f64) {
+fn smooth_preserve_features(
+    mesh: &mut Mesh,
+    iterations: usize,
+    strength: f64,
+    feature_threshold: f64,
+) {
     for _ in 0..iterations {
         let displacements = compute_bilateral_displacements(mesh, strength, feature_threshold);
         for (i, disp) in displacements.iter().enumerate() {
@@ -957,7 +965,11 @@ fn compute_laplacian_displacements(mesh: &Mesh, strength: f64) -> Vec<Vector3<f6
 }
 
 /// Compute bilateral (edge-preserving) displacements.
-fn compute_bilateral_displacements(mesh: &Mesh, strength: f64, feature_threshold: f64) -> Vec<Vector3<f64>> {
+fn compute_bilateral_displacements(
+    mesh: &Mesh,
+    strength: f64,
+    feature_threshold: f64,
+) -> Vec<Vector3<f64>> {
     let adjacency = build_vertex_adjacency(mesh);
     let normals = compute_vertex_normals(mesh);
     let mut displacements = vec![Vector3::zeros(); mesh.vertices.len()];
@@ -981,7 +993,11 @@ fn compute_bilateral_displacements(mesh: &Mesh, strength: f64, feature_threshold
 
                 let neighbor_normal = normals.get(ni as usize).copied().unwrap_or(Vector3::z());
                 let normal_sim = normal.dot(&neighbor_normal).max(0.0);
-                let range_weight = if normal_sim > feature_threshold.cos() { 1.0 } else { 0.1 };
+                let range_weight = if normal_sim > feature_threshold.cos() {
+                    1.0
+                } else {
+                    0.1
+                };
 
                 let weight = spatial_weight * range_weight;
                 weighted_sum += diff * weight;

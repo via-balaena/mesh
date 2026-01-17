@@ -8,9 +8,8 @@
 //! - Point cloud operations
 
 use mesh_repair::{
-    fill_holes, load_mesh, remesh_isotropic, save_mesh,
-    validate_mesh, weld_vertices, DecimateParams, Mesh, Pipeline, RemeshParams, RepairParams,
-    Vertex,
+    DecimateParams, Mesh, Pipeline, RemeshParams, RepairParams, Vertex, fill_holes, load_mesh,
+    remesh_isotropic, save_mesh, validate_mesh, weld_vertices,
 };
 use std::path::Path;
 
@@ -33,12 +32,18 @@ fn create_unit_cube() -> Mesh {
     ];
 
     mesh.faces = vec![
-        [0, 2, 1], [0, 3, 2], // front
-        [4, 5, 6], [4, 6, 7], // back
-        [0, 1, 5], [0, 5, 4], // bottom
-        [2, 3, 7], [2, 7, 6], // top
-        [0, 4, 7], [0, 7, 3], // left
-        [1, 2, 6], [1, 6, 5], // right
+        [0, 2, 1],
+        [0, 3, 2], // front
+        [4, 5, 6],
+        [4, 6, 7], // back
+        [0, 1, 5],
+        [0, 5, 4], // bottom
+        [2, 3, 7],
+        [2, 7, 6], // top
+        [0, 4, 7],
+        [0, 7, 3], // left
+        [1, 2, 6],
+        [1, 6, 5], // right
     ];
 
     mesh
@@ -60,12 +65,17 @@ fn create_open_box() -> Mesh {
     ];
 
     mesh.faces = vec![
-        [0, 2, 1], [0, 3, 2], // front
-        [4, 5, 6], [4, 6, 7], // back
+        [0, 2, 1],
+        [0, 3, 2], // front
+        [4, 5, 6],
+        [4, 6, 7], // back
         // bottom faces removed
-        [2, 3, 7], [2, 7, 6], // top
-        [0, 4, 7], [0, 7, 3], // left
-        [1, 2, 6], [1, 6, 5], // right
+        [2, 3, 7],
+        [2, 7, 6], // top
+        [0, 4, 7],
+        [0, 7, 3], // left
+        [1, 2, 6],
+        [1, 6, 5], // right
     ];
 
     mesh
@@ -79,22 +89,47 @@ fn create_sphere(subdivisions: u32) -> Mesh {
     let b = 1.0 / phi;
 
     let ico_verts = [
-        [0.0, b, -a], [b, a, 0.0], [-b, a, 0.0], [0.0, b, a],
-        [0.0, -b, a], [-a, 0.0, b], [0.0, -b, -a], [a, 0.0, -b],
-        [a, 0.0, b], [-a, 0.0, -b], [b, -a, 0.0], [-b, -a, 0.0],
+        [0.0, b, -a],
+        [b, a, 0.0],
+        [-b, a, 0.0],
+        [0.0, b, a],
+        [0.0, -b, a],
+        [-a, 0.0, b],
+        [0.0, -b, -a],
+        [a, 0.0, -b],
+        [a, 0.0, b],
+        [-a, 0.0, -b],
+        [b, -a, 0.0],
+        [-b, -a, 0.0],
     ];
 
     for v in &ico_verts {
         let len = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
-        mesh.vertices.push(Vertex::from_coords(v[0] / len, v[1] / len, v[2] / len));
+        mesh.vertices
+            .push(Vertex::from_coords(v[0] / len, v[1] / len, v[2] / len));
     }
 
     let ico_faces: [[u32; 3]; 20] = [
-        [0, 1, 2], [3, 2, 1], [3, 4, 5], [3, 8, 4],
-        [0, 6, 7], [0, 9, 6], [4, 10, 11], [6, 11, 10],
-        [2, 5, 9], [11, 9, 5], [1, 7, 8], [10, 8, 7],
-        [3, 5, 2], [3, 1, 8], [0, 2, 9], [0, 7, 1],
-        [6, 9, 11], [6, 10, 7], [4, 11, 5], [4, 8, 10],
+        [0, 1, 2],
+        [3, 2, 1],
+        [3, 4, 5],
+        [3, 8, 4],
+        [0, 6, 7],
+        [0, 9, 6],
+        [4, 10, 11],
+        [6, 11, 10],
+        [2, 5, 9],
+        [11, 9, 5],
+        [1, 7, 8],
+        [10, 8, 7],
+        [3, 5, 2],
+        [3, 1, 8],
+        [0, 2, 9],
+        [0, 7, 1],
+        [6, 9, 11],
+        [6, 10, 7],
+        [4, 11, 5],
+        [4, 8, 10],
     ];
 
     for f in &ico_faces {
@@ -181,9 +216,7 @@ fn test_pipeline_new_and_finish() {
 #[test]
 fn test_pipeline_repair() {
     let mesh = create_unit_cube();
-    let result = Pipeline::new(mesh)
-        .repair()
-        .finish();
+    let result = Pipeline::new(mesh).repair().finish();
 
     assert_eq!(result.stages_executed, 1);
     assert!(!result.operation_log.is_empty());
@@ -192,9 +225,7 @@ fn test_pipeline_repair() {
 #[test]
 fn test_pipeline_repair_for_scans() {
     let mesh = create_unit_cube();
-    let result = Pipeline::new(mesh)
-        .repair_for_scans()
-        .finish();
+    let result = Pipeline::new(mesh).repair_for_scans().finish();
 
     assert_eq!(result.stages_executed, 1);
 }
@@ -202,9 +233,7 @@ fn test_pipeline_repair_for_scans() {
 #[test]
 fn test_pipeline_repair_for_printing() {
     let mesh = create_unit_cube();
-    let result = Pipeline::new(mesh)
-        .repair_for_printing()
-        .finish();
+    let result = Pipeline::new(mesh).repair_for_printing().finish();
 
     assert_eq!(result.stages_executed, 1);
 }
@@ -212,9 +241,7 @@ fn test_pipeline_repair_for_printing() {
 #[test]
 fn test_pipeline_repair_for_cad() {
     let mesh = create_unit_cube();
-    let result = Pipeline::new(mesh)
-        .repair_for_cad()
-        .finish();
+    let result = Pipeline::new(mesh).repair_for_cad().finish();
 
     assert_eq!(result.stages_executed, 1);
 }
@@ -223,9 +250,7 @@ fn test_pipeline_repair_for_cad() {
 fn test_pipeline_repair_with_params() {
     let mesh = create_unit_cube();
     let params = RepairParams::for_printing();
-    let result = Pipeline::new(mesh)
-        .repair_with_params(&params)
-        .finish();
+    let result = Pipeline::new(mesh).repair_with_params(&params).finish();
 
     assert_eq!(result.stages_executed, 1);
 }
@@ -233,9 +258,7 @@ fn test_pipeline_repair_with_params() {
 #[test]
 fn test_pipeline_fill_holes() {
     let mesh = create_open_box();
-    let result = Pipeline::new(mesh)
-        .fill_holes(100)
-        .finish();
+    let result = Pipeline::new(mesh).fill_holes(100).finish();
 
     assert_eq!(result.stages_executed, 1);
 }
@@ -243,9 +266,7 @@ fn test_pipeline_fill_holes() {
 #[test]
 fn test_pipeline_fix_winding() {
     let mesh = create_unit_cube();
-    let result = Pipeline::new(mesh)
-        .fix_winding()
-        .finish();
+    let result = Pipeline::new(mesh).fix_winding().finish();
 
     assert_eq!(result.stages_executed, 1);
 }
@@ -253,9 +274,7 @@ fn test_pipeline_fix_winding() {
 #[test]
 fn test_pipeline_remove_small_components() {
     let mesh = create_unit_cube();
-    let result = Pipeline::new(mesh)
-        .remove_small_components(5)
-        .finish();
+    let result = Pipeline::new(mesh).remove_small_components(5).finish();
 
     assert_eq!(result.stages_executed, 1);
 }
@@ -263,9 +282,7 @@ fn test_pipeline_remove_small_components() {
 #[test]
 fn test_pipeline_remesh() {
     let mesh = create_sphere(2); // Use sphere for better remesh results
-    let result = Pipeline::new(mesh)
-        .remesh(0.2)
-        .finish();
+    let result = Pipeline::new(mesh).remesh(0.2).finish();
 
     assert_eq!(result.stages_executed, 1);
     // Remeshing should produce faces (may return 0 for degenerate input)
@@ -280,19 +297,15 @@ fn test_pipeline_remesh_with_params() {
         iterations: 2,
         ..Default::default()
     };
-    let result = Pipeline::new(mesh)
-        .remesh_with_params(&params)
-        .finish();
+    let result = Pipeline::new(mesh).remesh_with_params(&params).finish();
 
     assert_eq!(result.stages_executed, 1);
 }
 
 #[test]
 fn test_pipeline_decimate_to_count() {
-    let mesh = create_sphere(2);  // 320 triangles
-    let result = Pipeline::new(mesh)
-        .decimate_to_count(100)
-        .finish();
+    let mesh = create_sphere(2); // 320 triangles
+    let result = Pipeline::new(mesh).decimate_to_count(100).finish();
 
     assert_eq!(result.stages_executed, 1);
     assert!(result.mesh.face_count() <= 320);
@@ -300,11 +313,9 @@ fn test_pipeline_decimate_to_count() {
 
 #[test]
 fn test_pipeline_decimate_to_ratio() {
-    let mesh = create_sphere(2);  // 320 triangles
+    let mesh = create_sphere(2); // 320 triangles
     let original_count = mesh.face_count();
-    let result = Pipeline::new(mesh)
-        .decimate_to_ratio(0.5)
-        .finish();
+    let result = Pipeline::new(mesh).decimate_to_ratio(0.5).finish();
 
     assert_eq!(result.stages_executed, 1);
     assert!(result.mesh.face_count() <= original_count);
@@ -314,9 +325,7 @@ fn test_pipeline_decimate_to_ratio() {
 fn test_pipeline_decimate_with_params() {
     let mesh = create_sphere(2);
     let params = DecimateParams::with_target_ratio(0.5);
-    let result = Pipeline::new(mesh)
-        .decimate_with_params(&params)
-        .finish();
+    let result = Pipeline::new(mesh).decimate_with_params(&params).finish();
 
     assert_eq!(result.stages_executed, 1);
 }
@@ -325,9 +334,7 @@ fn test_pipeline_decimate_with_params() {
 fn test_pipeline_subdivide() {
     let mesh = create_unit_cube();
     let original_count = mesh.face_count();
-    let result = Pipeline::new(mesh)
-        .subdivide(1)
-        .finish();
+    let result = Pipeline::new(mesh).subdivide(1).finish();
 
     assert_eq!(result.stages_executed, 1);
     // Subdivision multiplies face count by 4
@@ -338,9 +345,7 @@ fn test_pipeline_subdivide() {
 fn test_pipeline_subdivide_with_params() {
     let mesh = create_unit_cube();
     let params = mesh_repair::SubdivideParams::with_iterations(1);
-    let result = Pipeline::new(mesh)
-        .subdivide_with_params(&params)
-        .finish();
+    let result = Pipeline::new(mesh).subdivide_with_params(&params).finish();
 
     assert_eq!(result.stages_executed, 1);
 }
@@ -348,9 +353,7 @@ fn test_pipeline_subdivide_with_params() {
 #[test]
 fn test_pipeline_compute_normals() {
     let mesh = create_unit_cube();
-    let result = Pipeline::new(mesh)
-        .compute_normals()
-        .finish();
+    let result = Pipeline::new(mesh).compute_normals().finish();
 
     assert_eq!(result.stages_executed, 1);
 }
@@ -358,9 +361,7 @@ fn test_pipeline_compute_normals() {
 #[test]
 fn test_pipeline_validate() {
     let mesh = create_unit_cube();
-    let result = Pipeline::new(mesh)
-        .validate()
-        .finish();
+    let result = Pipeline::new(mesh).validate().finish();
 
     assert_eq!(result.stages_executed, 1);
     assert!(result.validation.is_some());
@@ -384,7 +385,7 @@ fn test_pipeline_require_printable_success() {
 
 #[test]
 fn test_pipeline_require_printable_failure() {
-    let mesh = create_open_box();  // Open mesh, not printable
+    let mesh = create_open_box(); // Open mesh, not printable
     let result = Pipeline::new(mesh).require_printable();
 
     assert!(result.is_err());
@@ -471,7 +472,7 @@ fn test_pipeline_save_and_load() {
         .save(&temp_path)
         .expect("Save should succeed");
 
-    assert!(result.stages_executed >= 2);  // repair + save
+    assert!(result.stages_executed >= 2); // repair + save
 
     // Verify file was created
     assert!(temp_path.exists());
@@ -527,10 +528,16 @@ fn test_mesh_error_display() {
     assert!(format!("{}", err).contains("broken"));
 
     let err = MeshError::empty_mesh("no vertices");
-    assert!(format!("{}", err).contains("no vertices") || format!("{}", err).to_lowercase().contains("empty"));
+    assert!(
+        format!("{}", err).contains("no vertices")
+            || format!("{}", err).to_lowercase().contains("empty")
+    );
 
     let err = MeshError::repair_failed("could not fix");
-    assert!(format!("{}", err).contains("could not fix") || format!("{}", err).to_lowercase().contains("repair"));
+    assert!(
+        format!("{}", err).contains("could not fix")
+            || format!("{}", err).to_lowercase().contains("repair")
+    );
 
     let err = MeshError::hole_fill_failed("too complex");
     let display = format!("{}", err);
@@ -538,7 +545,11 @@ fn test_mesh_error_display() {
 
     let err = MeshError::boolean_failed("union", "meshes don't overlap");
     let display = format!("{}", err);
-    assert!(display.contains("union") || display.contains("overlap") || display.to_lowercase().contains("boolean"));
+    assert!(
+        display.contains("union")
+            || display.contains("overlap")
+            || display.to_lowercase().contains("boolean")
+    );
 
     let err = MeshError::decimation_failed("target too low");
     let display = format!("{}", err);
@@ -699,7 +710,11 @@ fn test_mesh_report_display() {
 
     let display = format!("{:?}", report);
     // Debug format should contain field info
-    assert!(display.contains("vertex_count") || display.contains("face_count") || display.contains("MeshReport"));
+    assert!(
+        display.contains("vertex_count")
+            || display.contains("face_count")
+            || display.contains("MeshReport")
+    );
 }
 
 // =============================================================================
@@ -877,7 +892,7 @@ fn test_mesh_volume() {
     let volume = mesh.volume();
 
     // Unit cube has volume of 1
-    assert!((volume.abs() - 1.0).abs() < 0.1);  // Allow some tolerance for winding
+    assert!((volume.abs() - 1.0).abs() < 0.1); // Allow some tolerance for winding
 }
 
 #[test]

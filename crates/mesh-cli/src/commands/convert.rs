@@ -7,7 +7,7 @@ use colored::Colorize;
 use mesh_repair::Mesh;
 use serde::Serialize;
 
-use crate::{output, Cli, OutputFormat};
+use crate::{Cli, OutputFormat, output};
 
 #[derive(Serialize)]
 struct ConvertResult {
@@ -20,7 +20,8 @@ struct ConvertResult {
 }
 
 pub fn run(input: &Path, output_path: &Path, _ascii: bool, cli: &Cli) -> Result<()> {
-    let mesh = Mesh::load(input).with_context(|| format!("Failed to load mesh from {:?}", input))?;
+    let mesh =
+        Mesh::load(input).with_context(|| format!("Failed to load mesh from {:?}", input))?;
 
     let input_ext = input
         .extension()
@@ -55,11 +56,7 @@ pub fn run(input: &Path, output_path: &Path, _ascii: bool, cli: &Cli) -> Result<
         OutputFormat::Text => {
             if !cli.quiet {
                 output::success(
-                    &format!(
-                        "Converted {} to {}",
-                        input.display(),
-                        output_path.display()
-                    ),
+                    &format!("Converted {} to {}", input.display(), output_path.display()),
                     cli.format,
                     cli.quiet,
                 );

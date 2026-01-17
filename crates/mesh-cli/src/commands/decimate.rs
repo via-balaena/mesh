@@ -7,7 +7,7 @@ use colored::Colorize;
 use mesh_repair::{DecimateParams, Mesh};
 use serde::Serialize;
 
-use crate::{output, Cli, OutputFormat};
+use crate::{Cli, OutputFormat, output};
 
 #[derive(Serialize)]
 struct DecimateResult {
@@ -28,7 +28,8 @@ pub fn run(
     preserve_boundary: bool,
     cli: &Cli,
 ) -> Result<()> {
-    let mesh = Mesh::load(input).with_context(|| format!("Failed to load mesh from {:?}", input))?;
+    let mesh =
+        Mesh::load(input).with_context(|| format!("Failed to load mesh from {:?}", input))?;
 
     // Determine decimation parameters
     let params = if let Some(target_count) = count {
@@ -44,10 +45,7 @@ pub fn run(
 
     if !cli.quiet {
         output::info(
-            &format!(
-                "Decimating mesh ({} triangles)...",
-                mesh.face_count()
-            ),
+            &format!("Decimating mesh ({} triangles)...", mesh.face_count()),
             cli.format,
             cli.quiet,
         );
@@ -62,8 +60,8 @@ pub fn run(
         .save(output_path)
         .with_context(|| format!("Failed to save decimated mesh to {:?}", output_path))?;
 
-    let reduction = 1.0
-        - (decimate_result.final_triangles as f64 / decimate_result.original_triangles as f64);
+    let reduction =
+        1.0 - (decimate_result.final_triangles as f64 / decimate_result.original_triangles as f64);
 
     let result = DecimateResult {
         input: input.display().to_string(),

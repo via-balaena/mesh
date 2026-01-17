@@ -15,8 +15,8 @@
 //! Run with: cargo test -p mesh-repair --test visual_regression
 
 use mesh_repair::{
-    decimate_mesh, fill_holes, remesh_isotropic, subdivide_mesh, validate_mesh,
-    weld_vertices, DecimateParams, Mesh, RemeshParams, SubdivideParams, Vertex,
+    DecimateParams, Mesh, RemeshParams, SubdivideParams, Vertex, decimate_mesh, fill_holes,
+    remesh_isotropic, subdivide_mesh, validate_mesh, weld_vertices,
 };
 
 // =============================================================================
@@ -146,12 +146,18 @@ fn create_test_cube() -> Mesh {
     ];
 
     mesh.faces = vec![
-        [0, 2, 1], [0, 3, 2], // front
-        [4, 5, 6], [4, 6, 7], // back
-        [0, 1, 5], [0, 5, 4], // bottom
-        [2, 3, 7], [2, 7, 6], // top
-        [0, 4, 7], [0, 7, 3], // left
-        [1, 2, 6], [1, 6, 5], // right
+        [0, 2, 1],
+        [0, 3, 2], // front
+        [4, 5, 6],
+        [4, 6, 7], // back
+        [0, 1, 5],
+        [0, 5, 4], // bottom
+        [2, 3, 7],
+        [2, 7, 6], // top
+        [0, 4, 7],
+        [0, 7, 3], // left
+        [1, 2, 6],
+        [1, 6, 5], // right
     ];
 
     mesh
@@ -165,22 +171,47 @@ fn create_test_sphere(subdivisions: u32) -> Mesh {
     let b = 1.0 / phi;
 
     let ico_verts = [
-        [0.0, b, -a], [b, a, 0.0], [-b, a, 0.0], [0.0, b, a],
-        [0.0, -b, a], [-a, 0.0, b], [0.0, -b, -a], [a, 0.0, -b],
-        [a, 0.0, b], [-a, 0.0, -b], [b, -a, 0.0], [-b, -a, 0.0],
+        [0.0, b, -a],
+        [b, a, 0.0],
+        [-b, a, 0.0],
+        [0.0, b, a],
+        [0.0, -b, a],
+        [-a, 0.0, b],
+        [0.0, -b, -a],
+        [a, 0.0, -b],
+        [a, 0.0, b],
+        [-a, 0.0, -b],
+        [b, -a, 0.0],
+        [-b, -a, 0.0],
     ];
 
     for v in &ico_verts {
         let len = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
-        mesh.vertices.push(Vertex::from_coords(v[0] / len, v[1] / len, v[2] / len));
+        mesh.vertices
+            .push(Vertex::from_coords(v[0] / len, v[1] / len, v[2] / len));
     }
 
     let ico_faces: [[u32; 3]; 20] = [
-        [0, 1, 2], [3, 2, 1], [3, 4, 5], [3, 8, 4],
-        [0, 6, 7], [0, 9, 6], [4, 10, 11], [6, 11, 10],
-        [2, 5, 9], [11, 9, 5], [1, 7, 8], [10, 8, 7],
-        [3, 5, 2], [3, 1, 8], [0, 2, 9], [0, 7, 1],
-        [6, 9, 11], [6, 10, 7], [4, 11, 5], [4, 8, 10],
+        [0, 1, 2],
+        [3, 2, 1],
+        [3, 4, 5],
+        [3, 8, 4],
+        [0, 6, 7],
+        [0, 9, 6],
+        [4, 10, 11],
+        [6, 11, 10],
+        [2, 5, 9],
+        [11, 9, 5],
+        [1, 7, 8],
+        [10, 8, 7],
+        [3, 5, 2],
+        [3, 1, 8],
+        [0, 2, 9],
+        [0, 7, 1],
+        [6, 9, 11],
+        [6, 10, 7],
+        [4, 11, 5],
+        [4, 8, 10],
     ];
 
     for f in &ico_faces {
@@ -263,11 +294,16 @@ fn create_open_box() -> Mesh {
 
     // Missing bottom faces
     mesh.faces = vec![
-        [0, 2, 1], [0, 3, 2], // front
-        [4, 5, 6], [4, 6, 7], // back
-        [2, 3, 7], [2, 7, 6], // top
-        [0, 4, 7], [0, 7, 3], // left
-        [1, 2, 6], [1, 6, 5], // right
+        [0, 2, 1],
+        [0, 3, 2], // front
+        [4, 5, 6],
+        [4, 6, 7], // back
+        [2, 3, 7],
+        [2, 7, 6], // top
+        [0, 4, 7],
+        [0, 7, 3], // left
+        [1, 2, 6],
+        [1, 6, 5], // right
     ];
 
     mesh
@@ -295,8 +331,14 @@ fn visual_regression_subdivision_cube() {
 
     // Surface area should be roughly similar (smoothing can affect it)
     // Loop subdivision on a cube can produce various results depending on implementation
-    assert!(snapshot.surface_area > 0.0, "Surface area should be positive");
-    assert!(snapshot.surface_area < 20.0, "Surface area reasonable upper bound");
+    assert!(
+        snapshot.surface_area > 0.0,
+        "Surface area should be positive"
+    );
+    assert!(
+        snapshot.surface_area < 20.0,
+        "Surface area reasonable upper bound"
+    );
 }
 
 #[test]
@@ -310,7 +352,9 @@ fn visual_regression_subdivision_deterministic() {
     let snap1 = MeshSnapshot::from_mesh(&result1.mesh);
     let snap2 = MeshSnapshot::from_mesh(&result2.mesh);
 
-    snap1.compare(&snap2, 1e-10).expect("Subdivision should be deterministic");
+    snap1
+        .compare(&snap2, 1e-10)
+        .expect("Subdivision should be deterministic");
 }
 
 // =============================================================================
@@ -327,7 +371,10 @@ fn visual_regression_decimation_sphere() {
 
     // Should reduce face count
     assert!(snapshot.face_count <= 320, "Face count should be reduced");
-    assert!(snapshot.face_count >= 100, "Should have reasonable faces left");
+    assert!(
+        snapshot.face_count >= 100,
+        "Should have reasonable faces left"
+    );
 
     // Bounds should be preserved (sphere stays spherical)
     for i in 0..3 {
@@ -347,7 +394,9 @@ fn visual_regression_decimation_deterministic() {
     let snap1 = MeshSnapshot::from_mesh(&result1.mesh);
     let snap2 = MeshSnapshot::from_mesh(&result2.mesh);
 
-    snap1.compare(&snap2, 1e-10).expect("Decimation should be deterministic");
+    snap1
+        .compare(&snap2, 1e-10)
+        .expect("Decimation should be deterministic");
 }
 
 #[test]
@@ -360,14 +409,20 @@ fn visual_regression_aggressive_decimation() {
 
     // Aggressive decimation should still preserve basic shape
     assert!(snapshot.face_count >= 50, "Should have at least 50 faces");
-    assert!(snapshot.face_count <= 200, "Should be significantly reduced");
+    assert!(
+        snapshot.face_count <= 200,
+        "Should be significantly reduced"
+    );
 
     // Volume should be roughly preserved (aggressive decimation can reduce it)
     let original_volume = create_test_sphere(3).volume().abs();
     let decimated_volume = snapshot.volume.abs();
     let volume_ratio = decimated_volume / original_volume;
     // Aggressive decimation to 10% may significantly alter volume
-    assert!(volume_ratio > 0.1, "Volume should be at least 10% preserved after aggressive decimation");
+    assert!(
+        volume_ratio > 0.1,
+        "Volume should be at least 10% preserved after aggressive decimation"
+    );
 }
 
 // =============================================================================
@@ -413,7 +468,9 @@ fn visual_regression_remesh_deterministic() {
     let snap2 = MeshSnapshot::from_mesh(&result2.mesh);
 
     // Remeshing should be deterministic
-    snap1.compare(&snap2, 1e-10).expect("Remeshing should be deterministic");
+    snap1
+        .compare(&snap2, 1e-10)
+        .expect("Remeshing should be deterministic");
 }
 
 // =============================================================================
@@ -451,7 +508,9 @@ fn visual_regression_hole_filling_deterministic() {
     let snap1 = MeshSnapshot::from_mesh(&box1);
     let snap2 = MeshSnapshot::from_mesh(&box2);
 
-    snap1.compare(&snap2, 1e-10).expect("Hole filling should be deterministic");
+    snap1
+        .compare(&snap2, 1e-10)
+        .expect("Hole filling should be deterministic");
 }
 
 // =============================================================================
@@ -530,7 +589,10 @@ fn visual_regression_repair_and_decimate() {
     let decimated = MeshSnapshot::from_mesh(&result.mesh);
 
     // Face count should be reduced
-    assert!(decimated.face_count < original.face_count, "Decimation should reduce faces");
+    assert!(
+        decimated.face_count < original.face_count,
+        "Decimation should reduce faces"
+    );
 
     // Volume should be roughly preserved
     let vol_diff = (original.volume.abs() - decimated.volume.abs()).abs();
@@ -596,7 +658,10 @@ fn visual_regression_large_mesh() {
     let snapshot = MeshSnapshot::from_mesh(&sphere);
 
     assert_eq!(snapshot.face_count, 5120, "Large sphere face count");
-    assert!(snapshot.surface_area > 10.0, "Large sphere has significant area");
+    assert!(
+        snapshot.surface_area > 10.0,
+        "Large sphere has significant area"
+    );
     assert!(snapshot.volume.abs() > 3.0, "Large sphere has volume");
 }
 
@@ -611,7 +676,11 @@ fn visual_baseline_operations() {
     // Cube subdivision baseline
     let cube = create_test_cube();
     let sub = subdivide_mesh(&cube, &SubdivideParams::with_iterations(1));
-    assert_eq!(sub.mesh.face_count(), 48, "Cube subdivision baseline: 48 faces");
+    assert_eq!(
+        sub.mesh.face_count(),
+        48,
+        "Cube subdivision baseline: 48 faces"
+    );
 
     // Sphere decimation baseline
     let sphere = create_test_sphere(2); // 320 faces

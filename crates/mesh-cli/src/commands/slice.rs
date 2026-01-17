@@ -4,10 +4,10 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use colored::Colorize;
-use mesh_repair::{calculate_layer_stats, slice_mesh, Mesh, SliceParams};
+use mesh_repair::{Mesh, SliceParams, calculate_layer_stats, slice_mesh};
 use serde::Serialize;
 
-use crate::{output, Cli, OutputFormat};
+use crate::{Cli, OutputFormat, output};
 
 #[derive(Serialize)]
 struct SliceInfo {
@@ -50,7 +50,8 @@ pub fn run(
     detailed: bool,
     cli: &Cli,
 ) -> Result<()> {
-    let mesh = Mesh::load(input).with_context(|| format!("Failed to load mesh from {:?}", input))?;
+    let mesh =
+        Mesh::load(input).with_context(|| format!("Failed to load mesh from {:?}", input))?;
 
     let params = SliceParams {
         layer_height,

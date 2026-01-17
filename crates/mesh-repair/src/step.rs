@@ -34,9 +34,9 @@ use crate::{Mesh, MeshError, MeshResult};
 use std::path::Path;
 
 // Use truck_modeling types which have the STEP trait implementations
-use truck_modeling::{Curve, Point3, Surface, InnerSpace};
-use truck_modeling::topology::{Edge, Face, Shell, Solid, Vertex, Wire};
 use truck_geometry::specifieds::{Line, Plane};
+use truck_modeling::topology::{Edge, Face, Shell, Solid, Vertex, Wire};
+use truck_modeling::{Curve, InnerSpace, Point3, Surface};
 use truck_stepio::out::{CompleteStepDisplay, StepHeaderDescriptor, StepModel};
 
 /// Parameters for STEP file export.
@@ -81,7 +81,11 @@ impl StepExportParams {
     }
 
     /// Create params with author and organization info.
-    pub fn with_author(mut self, author: impl Into<String>, organization: impl Into<String>) -> Self {
+    pub fn with_author(
+        mut self,
+        author: impl Into<String>,
+        organization: impl Into<String>,
+    ) -> Self {
         self.author = author.into();
         self.organization = organization.into();
         self
@@ -198,10 +202,7 @@ pub fn export_step(
 /// Export a mesh to STEP format and return the STEP data as a string.
 ///
 /// This is useful when you want to process the STEP data without writing to a file.
-pub fn export_step_to_string(
-    mesh: &Mesh,
-    params: &StepExportParams,
-) -> MeshResult<String> {
+pub fn export_step_to_string(mesh: &Mesh, params: &StepExportParams) -> MeshResult<String> {
     if mesh.faces.is_empty() {
         return Err(MeshError::EmptyMesh {
             details: "Mesh has no faces to export".into(),
@@ -298,10 +299,7 @@ fn mesh_to_truck_shell(mesh: &Mesh) -> MeshResult<Shell> {
 }
 
 /// Create STEP output for a shell (open or closed).
-fn create_shell_step(
-    shell: &Shell,
-    params: &StepExportParams,
-) -> MeshResult<String> {
+fn create_shell_step(shell: &Shell, params: &StepExportParams) -> MeshResult<String> {
     let compressed = shell.compress();
     let step_model = StepModel::from(&compressed);
 
@@ -319,17 +317,17 @@ fn create_shell_step(
 /// Note: Creating a proper solid requires the shell to be topologically valid,
 /// meaning faces must share edges properly. For mesh exports where faces
 /// may not share topology, this will fall back to shell export.
-fn create_solid_step(
-    shell: &Shell,
-    params: &StepExportParams,
-) -> MeshResult<String> {
+fn create_solid_step(shell: &Shell, params: &StepExportParams) -> MeshResult<String> {
     use truck_modeling::ShellCondition;
 
     // Check if the shell is properly closed for solid creation
     let condition = shell.shell_condition();
     if condition != ShellCondition::Closed && condition != ShellCondition::Oriented {
         return Err(MeshError::InvalidTopology {
-            details: format!("Shell is not closed/oriented (condition: {:?}), cannot create solid", condition),
+            details: format!(
+                "Shell is not closed/oriented (condition: {:?}), cannot create solid",
+                condition
+            ),
         });
     }
 
@@ -461,14 +459,24 @@ mod tests {
         let params = StepExportParams::default();
 
         let result = export_step_to_string(&mesh, &params);
-        assert!(result.is_ok(), "STEP export should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "STEP export should succeed: {:?}",
+            result.err()
+        );
 
         let step_string = result.unwrap();
         // Check basic STEP structure
-        assert!(step_string.contains("ISO-10303-21"), "Should have ISO header");
+        assert!(
+            step_string.contains("ISO-10303-21"),
+            "Should have ISO header"
+        );
         assert!(step_string.contains("HEADER"), "Should have HEADER section");
         assert!(step_string.contains("DATA"), "Should have DATA section");
-        assert!(step_string.contains("CARTESIAN_POINT"), "Should have vertices");
+        assert!(
+            step_string.contains("CARTESIAN_POINT"),
+            "Should have vertices"
+        );
     }
 
     #[test]
@@ -477,10 +485,17 @@ mod tests {
         let params = StepExportParams::default();
 
         let result = export_step_to_string(&mesh, &params);
-        assert!(result.is_ok(), "STEP export should succeed for tetrahedron: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "STEP export should succeed for tetrahedron: {:?}",
+            result.err()
+        );
 
         let step_string = result.unwrap();
-        assert!(step_string.contains("CARTESIAN_POINT"), "Should have vertices");
+        assert!(
+            step_string.contains("CARTESIAN_POINT"),
+            "Should have vertices"
+        );
     }
 
     #[test]
@@ -489,10 +504,17 @@ mod tests {
         let params = StepExportParams::default();
 
         let result = export_step_to_string(&mesh, &params);
-        assert!(result.is_ok(), "STEP export should succeed for cube: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "STEP export should succeed for cube: {:?}",
+            result.err()
+        );
 
         let step_string = result.unwrap();
-        assert!(step_string.contains("CARTESIAN_POINT"), "Should have vertices");
+        assert!(
+            step_string.contains("CARTESIAN_POINT"),
+            "Should have vertices"
+        );
     }
 
     #[test]
@@ -504,7 +526,11 @@ mod tests {
         let path = temp_dir.join("test_mesh.step");
 
         let result = export_step(&mesh, &path, &params);
-        assert!(result.is_ok(), "STEP file export should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "STEP file export should succeed: {:?}",
+            result.err()
+        );
 
         let stats = result.unwrap();
         assert_eq!(stats.face_count, 4);

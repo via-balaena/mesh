@@ -35,8 +35,8 @@
 //! println!("Estimated print time: {:.1} minutes", result.estimated_print_time);
 //! ```
 
-use crate::measure::{cross_section, CrossSection};
 use crate::Mesh;
+use crate::measure::{CrossSection, cross_section};
 use nalgebra::{Point3, Vector3};
 
 /// Parameters for slicing operations.
@@ -243,7 +243,10 @@ impl LayerBounds {
 
     /// Center point of the bounding box.
     pub fn center(&self) -> (f64, f64) {
-        ((self.min_x + self.max_x) / 2.0, (self.min_y + self.max_y) / 2.0)
+        (
+            (self.min_x + self.max_x) / 2.0,
+            (self.min_y + self.max_y) / 2.0,
+        )
     }
 }
 
@@ -499,7 +502,12 @@ fn calculate_layer_bounds(contours: &[Contour]) -> LayerBounds {
         }
     }
 
-    LayerBounds { min_x, max_x, min_y, max_y }
+    LayerBounds {
+        min_x,
+        max_x,
+        min_y,
+        max_y,
+    }
 }
 
 fn estimate_layer_print_time(contours: &[Contour], params: &SliceParams) -> f64 {
@@ -995,11 +1003,7 @@ pub fn export_layer_svg(layer: &Layer, params: &SvgExportParams) -> String {
   <rect width=\"100%\" height=\"100%\" fill=\"{}\"/>\n\
   <text x=\"50%\" y=\"50%\" text-anchor=\"middle\" fill=\"#999\">Empty layer</text>\n\
 </svg>",
-            params.width,
-            params.height,
-            params.width,
-            params.height,
-            params.background_color
+            params.width, params.height, params.width, params.height, params.background_color
         );
     }
 
@@ -1067,7 +1071,10 @@ pub fn export_layer_svg(layer: &Layer, params: &SvgExportParams) -> String {
         svg.push_str(&format!(
             r#"    <path d="{}" fill="{}" stroke="{}" stroke-width="{:.2}"/>
 "#,
-            path, fill, params.stroke_color, params.stroke_width / scale
+            path,
+            fill,
+            params.stroke_color,
+            params.stroke_width / scale
         ));
     }
 
@@ -1138,8 +1145,8 @@ pub fn export_3mf_slices(
 ) -> crate::MeshResult<()> {
     use std::fs::File;
     use std::io::Write;
-    use zip::write::SimpleFileOptions;
     use zip::ZipWriter;
+    use zip::write::SimpleFileOptions;
 
     let file = File::create(output_path).map_err(|e| crate::MeshError::IoWrite {
         path: output_path.to_path_buf(),
@@ -1198,16 +1205,15 @@ pub fn export_3mf_slices(
 fn generate_slice_stack_xml(result: &SliceResult) -> String {
     let mut xml = String::with_capacity(result.layers.len() * 500);
 
-    xml.push_str(r#"<?xml version="1.0" encoding="UTF-8"?>
+    xml.push_str(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
 <slicestack xmlns="http://schemas.microsoft.com/3dmanufacturing/slice/2015/07"
             zbottom="0">
-"#);
+"#,
+    );
 
     for layer in &result.layers {
-        xml.push_str(&format!(
-            "  <slice ztop=\"{:.6}\">\n",
-            layer.z_height
-        ));
+        xml.push_str(&format!("  <slice ztop=\"{:.6}\">\n", layer.z_height));
 
         for (contour_idx, contour) in layer.contours.iter().enumerate() {
             if contour.points.is_empty() {
@@ -1357,17 +1363,23 @@ mod tests {
         // 12 triangles for 6 faces
         let faces = [
             // Bottom
-            [0, 1, 2], [0, 2, 3],
+            [0, 1, 2],
+            [0, 2, 3],
             // Top
-            [4, 6, 5], [4, 7, 6],
+            [4, 6, 5],
+            [4, 7, 6],
             // Front
-            [0, 5, 1], [0, 4, 5],
+            [0, 5, 1],
+            [0, 4, 5],
             // Back
-            [2, 7, 3], [2, 6, 7],
+            [2, 7, 3],
+            [2, 6, 7],
             // Left
-            [0, 3, 7], [0, 7, 4],
+            [0, 3, 7],
+            [0, 7, 4],
             // Right
-            [1, 5, 6], [1, 6, 2],
+            [1, 5, 6],
+            [1, 6, 2],
         ];
 
         for f in faces {

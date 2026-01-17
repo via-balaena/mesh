@@ -4,12 +4,12 @@
 //!
 //! Note: GPU benchmarks require a GPU. They will be skipped if no GPU is available.
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use mesh_gpu::{
-    compute_sdf_gpu, detect_self_intersections_gpu, extract_isosurface_gpu, GpuCollisionParams,
-    GpuSdfParams, GpuSurfaceNetsParams,
+    GpuCollisionParams, GpuSdfParams, GpuSurfaceNetsParams, compute_sdf_gpu,
+    detect_self_intersections_gpu, extract_isosurface_gpu,
 };
-use mesh_repair::intersect::{detect_self_intersections, IntersectionParams};
+use mesh_repair::intersect::{IntersectionParams, detect_self_intersections};
 use mesh_repair::{Mesh, Vertex};
 
 // =============================================================================
@@ -217,13 +217,19 @@ fn create_cube_grid(count_per_axis: usize) -> Mesh {
 
 /// CPU SDF computation using mesh_to_sdf.
 fn compute_sdf_cpu(mesh: &Mesh, dims: [usize; 3], voxel_size: f64) -> Vec<f32> {
-    use mesh_to_sdf::{generate_grid_sdf, Grid, SignMethod, Topology};
+    use mesh_to_sdf::{Grid, SignMethod, Topology, generate_grid_sdf};
 
     // Convert mesh to mesh_to_sdf format
     let vertices: Vec<[f32; 3]> = mesh
         .vertices
         .iter()
-        .map(|v| [v.position.x as f32, v.position.y as f32, v.position.z as f32])
+        .map(|v| {
+            [
+                v.position.x as f32,
+                v.position.y as f32,
+                v.position.z as f32,
+            ]
+        })
         .collect();
 
     let indices: Vec<u32> = mesh.faces.iter().flat_map(|f| f.iter().copied()).collect();
@@ -287,7 +293,9 @@ fn bench_sdf(c: &mut Criterion) {
                 BenchmarkId::new(format!("cpu/{}", mesh_name), grid_size),
                 &(mesh, dims, voxel_size),
                 |b, (mesh, dims, voxel_size)| {
-                    b.iter(|| compute_sdf_cpu(black_box(mesh), black_box(*dims), black_box(*voxel_size)))
+                    b.iter(|| {
+                        compute_sdf_cpu(black_box(mesh), black_box(*dims), black_box(*voxel_size))
+                    })
                 },
             );
 
@@ -354,10 +362,15 @@ fn bench_surface_nets(c: &mut Criterion) {
             &(&sdf, dims, voxel_size),
             |b, (sdf, dims, _voxel_size)| {
                 b.iter(|| {
-                    use fast_surface_nets::{ndshape::RuntimeShape, surface_nets, SurfaceNetsBuffer};
+                    use fast_surface_nets::{
+                        SurfaceNetsBuffer, ndshape::RuntimeShape, surface_nets,
+                    };
 
-                    let shape =
-                        RuntimeShape::<u32, 3>::new([dims[0] as u32, dims[1] as u32, dims[2] as u32]);
+                    let shape = RuntimeShape::<u32, 3>::new([
+                        dims[0] as u32,
+                        dims[1] as u32,
+                        dims[2] as u32,
+                    ]);
                     let mut buffer = SurfaceNetsBuffer::default();
 
                     surface_nets(
@@ -421,30 +434,22 @@ fn bench_collision(c: &mut Criterion) {
         ));
 
         // CPU benchmark
-        group.bench_with_input(
-            BenchmarkId::new("cpu", mesh_name),
-            mesh,
-            |b, mesh| {
-                let params = IntersectionParams::default();
-                b.iter(|| detect_self_intersections(black_box(mesh), black_box(&params)))
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("cpu", mesh_name), mesh, |b, mesh| {
+            let params = IntersectionParams::default();
+            b.iter(|| detect_self_intersections(black_box(mesh), black_box(&params)))
+        });
 
         // GPU benchmark
-        group.bench_with_input(
-            BenchmarkId::new("gpu", mesh_name),
-            mesh,
-            |b, mesh| {
-                let params = GpuCollisionParams::default();
-                b.iter(|| {
-                    if let Ok(result) =
-                        detect_self_intersections_gpu(black_box(mesh), black_box(&params))
-                    {
-                        black_box(result);
-                    }
-                })
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("gpu", mesh_name), mesh, |b, mesh| {
+            let params = GpuCollisionParams::default();
+            b.iter(|| {
+                if let Ok(result) =
+                    detect_self_intersections_gpu(black_box(mesh), black_box(&params))
+                {
+                    black_box(result);
+                }
+            })
+        });
     }
 
     group.finish();
@@ -462,14 +467,8 @@ fn bench_large_meshes(c: &mut Criterion) {
     let large_sphere = create_sphere(6); // ~82k triangles
     let large_grid = create_cube_grid(10); // 10x10x10 = 1000 cubes * 12 = 12000 triangles
 
-    println!(
-        "Large sphere: {} triangles",
-        large_sphere.faces.len()
-    );
-    println!(
-        "Large grid: {} triangles",
-        large_grid.faces.len()
-    );
+    println!("Large sphere: {} triangles", large_sphere.faces.len());
+    println!("Large grid: {} triangles", large_grid.faces.len());
 
     // SDF on large sphere with 128^3 grid
     let dims = [128, 128, 128];
@@ -478,7 +477,13 @@ fn bench_large_meshes(c: &mut Criterion) {
     group.throughput(Throughput::Elements(128 * 128 * 128));
 
     group.bench_function("sdf_cpu_82k_tri_128grid", |b| {
-        b.iter(|| compute_sdf_cpu(black_box(&large_sphere), black_box(dims), black_box(voxel_size)))
+        b.iter(|| {
+            compute_sdf_cpu(
+                black_box(&large_sphere),
+                black_box(dims),
+                black_box(voxel_size),
+            )
+        })
     });
 
     let gpu_params = GpuSdfParams {

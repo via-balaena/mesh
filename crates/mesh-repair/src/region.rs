@@ -311,7 +311,11 @@ impl MeshRegion {
     pub fn intersection(&self, other: &MeshRegion) -> MeshRegion {
         MeshRegion {
             name: format!("{}&{}", self.name, other.name),
-            vertices: self.vertices.intersection(&other.vertices).copied().collect(),
+            vertices: self
+                .vertices
+                .intersection(&other.vertices)
+                .copied()
+                .collect(),
             faces: self.faces.intersection(&other.faces).copied().collect(),
             metadata: HashMap::new(),
             color: self.color.or(other.color),
@@ -413,7 +417,11 @@ impl RegionMap {
 
     /// Get vertices that are not in any region.
     pub fn unassigned_vertices(&self, mesh: &Mesh) -> HashSet<u32> {
-        let assigned: HashSet<u32> = self.regions.values().flat_map(|r| r.vertices.iter().copied()).collect();
+        let assigned: HashSet<u32> = self
+            .regions
+            .values()
+            .flat_map(|r| r.vertices.iter().copied())
+            .collect();
         (0..mesh.vertex_count() as u32)
             .filter(|i| !assigned.contains(i))
             .collect()
@@ -421,7 +429,11 @@ impl RegionMap {
 
     /// Get faces that are not in any region.
     pub fn unassigned_faces(&self, mesh: &Mesh) -> HashSet<u32> {
-        let assigned: HashSet<u32> = self.regions.values().flat_map(|r| r.faces.iter().copied()).collect();
+        let assigned: HashSet<u32> = self
+            .regions
+            .values()
+            .flat_map(|r| r.faces.iter().copied())
+            .collect();
         (0..mesh.face_count() as u32)
             .filter(|i| !assigned.contains(i))
             .collect()
@@ -667,7 +679,10 @@ impl RegionSelector {
     }
 
     /// Create a flood-fill selector starting from multiple seed faces.
-    pub fn flood_fill_multi(seed_faces: impl IntoIterator<Item = u32>, criteria: FloodFillCriteria) -> Self {
+    pub fn flood_fill_multi(
+        seed_faces: impl IntoIterator<Item = u32>,
+        criteria: FloodFillCriteria,
+    ) -> Self {
         RegionSelector::FloodFill {
             seeds: seed_faces.into_iter().collect(),
             criteria,
@@ -958,9 +973,10 @@ fn flood_fill_faces(
     while let Some(current_face) = queue.pop_front() {
         // Check face limit
         if let Some(max_faces) = criteria.max_faces
-            && selected.len() >= max_faces {
-                break;
-            }
+            && selected.len() >= max_faces
+        {
+            break;
+        }
 
         let current_normal = match face_normals.get(current_face as usize) {
             Some(Some(n)) => *n,
@@ -994,9 +1010,10 @@ fn flood_fill_faces(
 
                 // Check face limit before adding
                 if let Some(max_faces) = criteria.max_faces
-                    && selected.len() >= max_faces {
-                        break;
-                    }
+                    && selected.len() >= max_faces
+                {
+                    break;
+                }
 
                 // Get neighbor normal
                 let neighbor_normal = match face_normals.get(neighbor as usize) {
@@ -1013,12 +1030,13 @@ fn flood_fill_faces(
 
                 // Check distance criterion
                 if let (Some(max_dist), Some(seed_center)) = (criteria.max_distance, seed_centroid)
-                    && let Some(Some(neighbor_centroid)) = face_centroids.get(neighbor as usize) {
-                        let dist = (neighbor_centroid - seed_center).norm();
-                        if dist > max_dist {
-                            continue;
-                        }
+                    && let Some(Some(neighbor_centroid)) = face_centroids.get(neighbor as usize)
+                {
+                    let dist = (neighbor_centroid - seed_center).norm();
+                    if dist > max_dist {
+                        continue;
                     }
+                }
 
                 // All criteria passed, add to selection
                 selected.insert(neighbor);
@@ -1041,10 +1059,7 @@ fn build_edge_to_faces(faces: &[[u32; 3]]) -> HashMap<(u32, u32), Vec<u32>> {
             normalize_edge(face[2], face[0]),
         ];
         for edge in edges {
-            edge_to_faces
-                .entry(edge)
-                .or_default()
-                .push(face_idx as u32);
+            edge_to_faces.entry(edge).or_default().push(face_idx as u32);
         }
     }
 
@@ -1053,11 +1068,7 @@ fn build_edge_to_faces(faces: &[[u32; 3]]) -> HashMap<(u32, u32), Vec<u32>> {
 
 /// Normalize an edge so the smaller vertex index comes first.
 fn normalize_edge(v0: u32, v1: u32) -> (u32, u32) {
-    if v0 < v1 {
-        (v0, v1)
-    } else {
-        (v1, v0)
-    }
+    if v0 < v1 { (v0, v1) } else { (v1, v0) }
 }
 
 /// A thickness map that assigns thickness values to vertices or faces.
@@ -1356,10 +1367,8 @@ mod tests {
         let mesh = create_test_cube();
 
         // Select bottom half
-        let selector = RegionSelector::bounds(
-            Point3::new(-1.0, -1.0, -1.0),
-            Point3::new(11.0, 11.0, 5.0),
-        );
+        let selector =
+            RegionSelector::bounds(Point3::new(-1.0, -1.0, -1.0), Point3::new(11.0, 11.0, 5.0));
 
         let (vertices, _) = selector.select(&mesh);
         assert_eq!(vertices.len(), 4); // Bottom 4 vertices
@@ -1385,10 +1394,8 @@ mod tests {
         let mesh = create_test_cube();
 
         // Select top half (z > 5)
-        let selector = RegionSelector::half_space(
-            Point3::new(0.0, 0.0, 5.0),
-            Vector3::new(0.0, 0.0, 1.0),
-        );
+        let selector =
+            RegionSelector::half_space(Point3::new(0.0, 0.0, 5.0), Vector3::new(0.0, 0.0, 1.0));
 
         let (vertices, _) = selector.select(&mesh);
         assert_eq!(vertices.len(), 4); // Top 4 vertices
@@ -1403,8 +1410,9 @@ mod tests {
         let mesh = create_test_cube();
 
         // Select top half AND x > 5
-        let selector = RegionSelector::half_space(Point3::new(0.0, 0.0, 5.0), Vector3::z())
-            .and(RegionSelector::half_space(Point3::new(5.0, 0.0, 0.0), Vector3::x()));
+        let selector = RegionSelector::half_space(Point3::new(0.0, 0.0, 5.0), Vector3::z()).and(
+            RegionSelector::half_space(Point3::new(5.0, 0.0, 0.0), Vector3::x()),
+        );
 
         let (vertices, _) = selector.select(&mesh);
         assert_eq!(vertices.len(), 2); // Top-right vertices (5, 6)
@@ -1417,8 +1425,7 @@ mod tests {
         let mesh = create_test_cube();
 
         // Select vertex 0 OR vertex 7
-        let selector =
-            RegionSelector::vertices(vec![0]).or(RegionSelector::vertices(vec![7]));
+        let selector = RegionSelector::vertices(vec![0]).or(RegionSelector::vertices(vec![7]));
 
         let (vertices, _) = selector.select(&mesh);
         assert_eq!(vertices.len(), 2);
@@ -1744,13 +1751,13 @@ mod tests {
         let mut mesh = Mesh::new();
 
         // Bottom plane vertices (z=0)
-        mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 0.0));  // 0
+        mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 0.0)); // 0
         mesh.vertices.push(Vertex::from_coords(10.0, 0.0, 0.0)); // 1
         mesh.vertices.push(Vertex::from_coords(10.0, 10.0, 0.0)); // 2
         mesh.vertices.push(Vertex::from_coords(0.0, 10.0, 0.0)); // 3
 
         // Top plane vertices (z=5)
-        mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 5.0));  // 4
+        mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 5.0)); // 4
         mesh.vertices.push(Vertex::from_coords(10.0, 0.0, 5.0)); // 5
         mesh.vertices.push(Vertex::from_coords(10.0, 10.0, 5.0)); // 6
         mesh.vertices.push(Vertex::from_coords(0.0, 10.0, 5.0)); // 7

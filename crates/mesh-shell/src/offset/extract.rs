@@ -12,7 +12,7 @@ use super::grid::SdfGrid;
 ///
 /// Returns a new mesh representing the zero isosurface of the SDF.
 pub fn extract_isosurface(grid: &SdfGrid) -> ShellResult<Mesh> {
-    use fast_surface_nets::{ndshape::RuntimeShape, surface_nets, SurfaceNetsBuffer};
+    use fast_surface_nets::{SurfaceNetsBuffer, ndshape::RuntimeShape, surface_nets};
 
     info!(dims = ?grid.dims, "Extracting isosurface");
 
@@ -29,7 +29,8 @@ pub fn extract_isosurface(grid: &SdfGrid) -> ShellResult<Mesh> {
         for y in 0..grid.dims[1] {
             for x in 0..grid.dims[0] {
                 let src_idx = x + y * grid.dims[0] + z * grid.dims[0] * grid.dims[1];
-                let dst_idx = (x + 1) + (y + 1) * padded_dims[0] + (z + 1) * padded_dims[0] * padded_dims[1];
+                let dst_idx =
+                    (x + 1) + (y + 1) * padded_dims[0] + (z + 1) * padded_dims[0] * padded_dims[1];
                 padded_sdf[dst_idx] = grid.values[src_idx];
             }
         }
@@ -48,7 +49,11 @@ pub fn extract_isosurface(grid: &SdfGrid) -> ShellResult<Mesh> {
         &padded_sdf,
         &shape,
         [0, 0, 0],
-        [padded_dims[0] as u32 - 1, padded_dims[1] as u32 - 1, padded_dims[2] as u32 - 1],
+        [
+            padded_dims[0] as u32 - 1,
+            padded_dims[1] as u32 - 1,
+            padded_dims[2] as u32 - 1,
+        ],
         &mut buffer,
     );
 
@@ -73,7 +78,8 @@ pub fn extract_isosurface(grid: &SdfGrid) -> ShellResult<Mesh> {
         let world_y = grid.origin.y + (pos[1] - 1.0) as f64 * grid.voxel_size;
         let world_z = grid.origin.z + (pos[2] - 1.0) as f64 * grid.voxel_size;
 
-        mesh.vertices.push(Vertex::from_coords(world_x, world_y, world_z));
+        mesh.vertices
+            .push(Vertex::from_coords(world_x, world_y, world_z));
     }
 
     // Convert indices to faces (already triangulated)

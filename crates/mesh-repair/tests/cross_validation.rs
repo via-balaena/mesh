@@ -11,8 +11,8 @@
 //! Run with: cargo test -p mesh-repair --test cross_validation
 
 use mesh_repair::{
-    decimate_mesh, load_mesh, remesh_isotropic, save_mesh, subdivide_mesh, validate_mesh,
-    DecimateParams, Mesh, RemeshParams, SubdivideParams, Vertex,
+    DecimateParams, Mesh, RemeshParams, SubdivideParams, Vertex, decimate_mesh, load_mesh,
+    remesh_isotropic, save_mesh, subdivide_mesh, validate_mesh,
 };
 
 // =============================================================================
@@ -34,12 +34,18 @@ fn create_test_cube() -> Mesh {
     ];
 
     mesh.faces = vec![
-        [0, 2, 1], [0, 3, 2],
-        [4, 5, 6], [4, 6, 7],
-        [0, 1, 5], [0, 5, 4],
-        [2, 3, 7], [2, 7, 6],
-        [0, 4, 7], [0, 7, 3],
-        [1, 2, 6], [1, 6, 5],
+        [0, 2, 1],
+        [0, 3, 2],
+        [4, 5, 6],
+        [4, 6, 7],
+        [0, 1, 5],
+        [0, 5, 4],
+        [2, 3, 7],
+        [2, 7, 6],
+        [0, 4, 7],
+        [0, 7, 3],
+        [1, 2, 6],
+        [1, 6, 5],
     ];
 
     mesh
@@ -53,22 +59,47 @@ fn create_test_sphere(subdivisions: u32) -> Mesh {
     let b = 1.0 / phi;
 
     let ico_verts = [
-        [0.0, b, -a], [b, a, 0.0], [-b, a, 0.0], [0.0, b, a],
-        [0.0, -b, a], [-a, 0.0, b], [0.0, -b, -a], [a, 0.0, -b],
-        [a, 0.0, b], [-a, 0.0, -b], [b, -a, 0.0], [-b, -a, 0.0],
+        [0.0, b, -a],
+        [b, a, 0.0],
+        [-b, a, 0.0],
+        [0.0, b, a],
+        [0.0, -b, a],
+        [-a, 0.0, b],
+        [0.0, -b, -a],
+        [a, 0.0, -b],
+        [a, 0.0, b],
+        [-a, 0.0, -b],
+        [b, -a, 0.0],
+        [-b, -a, 0.0],
     ];
 
     for v in &ico_verts {
         let len = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
-        mesh.vertices.push(Vertex::from_coords(v[0] / len, v[1] / len, v[2] / len));
+        mesh.vertices
+            .push(Vertex::from_coords(v[0] / len, v[1] / len, v[2] / len));
     }
 
     let ico_faces: [[u32; 3]; 20] = [
-        [0, 1, 2], [3, 2, 1], [3, 4, 5], [3, 8, 4],
-        [0, 6, 7], [0, 9, 6], [4, 10, 11], [6, 11, 10],
-        [2, 5, 9], [11, 9, 5], [1, 7, 8], [10, 8, 7],
-        [3, 5, 2], [3, 1, 8], [0, 2, 9], [0, 7, 1],
-        [6, 9, 11], [6, 10, 7], [4, 11, 5], [4, 8, 10],
+        [0, 1, 2],
+        [3, 2, 1],
+        [3, 4, 5],
+        [3, 8, 4],
+        [0, 6, 7],
+        [0, 9, 6],
+        [4, 10, 11],
+        [6, 11, 10],
+        [2, 5, 9],
+        [11, 9, 5],
+        [1, 7, 8],
+        [10, 8, 7],
+        [3, 5, 2],
+        [3, 1, 8],
+        [0, 2, 9],
+        [0, 7, 1],
+        [6, 9, 11],
+        [6, 10, 7],
+        [4, 11, 5],
+        [4, 8, 10],
     ];
 
     for f in &ico_faces {
@@ -152,8 +183,7 @@ fn cross_validate_stl_ascii_format() {
 
     // Binary STL: 80-byte header + 4-byte triangle count + (50 bytes per triangle)
     // ASCII STL: starts with "solid"
-    let is_ascii = bytes.starts_with(b"solid") &&
-                   !bytes.iter().take(80).any(|&b| b == 0); // ASCII shouldn't have null bytes in header
+    let is_ascii = bytes.starts_with(b"solid") && !bytes.iter().take(80).any(|&b| b == 0); // ASCII shouldn't have null bytes in header
 
     if is_ascii {
         let content = String::from_utf8_lossy(&bytes);
@@ -201,8 +231,7 @@ fn cross_validate_stl_normal_vectors() {
     let bytes = std::fs::read(&path).expect("Should read file");
 
     // Check if ASCII or binary
-    let is_ascii = bytes.starts_with(b"solid") &&
-                   !bytes.iter().take(80).any(|&b| b == 0);
+    let is_ascii = bytes.starts_with(b"solid") && !bytes.iter().take(80).any(|&b| b == 0);
 
     if is_ascii {
         let content = String::from_utf8_lossy(&bytes);
@@ -228,20 +257,37 @@ fn cross_validate_stl_normal_vectors() {
     } else {
         // Binary STL: validate normals from binary data
         // Skip 80-byte header and 4-byte count
-        let triangle_count = u32::from_le_bytes([bytes[80], bytes[81], bytes[82], bytes[83]]) as usize;
+        let triangle_count =
+            u32::from_le_bytes([bytes[80], bytes[81], bytes[82], bytes[83]]) as usize;
 
         for i in 0..triangle_count {
             let offset = 84 + i * 50; // Each triangle is 50 bytes
             // Normal is first 12 bytes (3 f32s)
-            let nx = f32::from_le_bytes([bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]]);
-            let ny = f32::from_le_bytes([bytes[offset + 4], bytes[offset + 5], bytes[offset + 6], bytes[offset + 7]]);
-            let nz = f32::from_le_bytes([bytes[offset + 8], bytes[offset + 9], bytes[offset + 10], bytes[offset + 11]]);
+            let nx = f32::from_le_bytes([
+                bytes[offset],
+                bytes[offset + 1],
+                bytes[offset + 2],
+                bytes[offset + 3],
+            ]);
+            let ny = f32::from_le_bytes([
+                bytes[offset + 4],
+                bytes[offset + 5],
+                bytes[offset + 6],
+                bytes[offset + 7],
+            ]);
+            let nz = f32::from_le_bytes([
+                bytes[offset + 8],
+                bytes[offset + 9],
+                bytes[offset + 10],
+                bytes[offset + 11],
+            ]);
 
             let len = (nx * nx + ny * ny + nz * nz).sqrt();
             assert!(
                 (len - 1.0).abs() < 0.01 || len < 0.01, // Allow zero normals
                 "Normal should be unit length, got {} for triangle {}",
-                len, i
+                len,
+                i
             );
         }
     }
@@ -325,10 +371,7 @@ fn cross_validate_ply_format() {
     );
 
     // Must declare face element
-    assert!(
-        content.contains("element face 12"),
-        "Must declare 12 faces"
-    );
+    assert!(content.contains("element face 12"), "Must declare 12 faces");
 
     // Must have end_header
     assert!(content.contains("end_header"), "Must have end_header");
@@ -525,7 +568,10 @@ fn cross_validate_manifold_cube() {
     // Clean cube should be manifold
     assert!(report.is_manifold, "Cube should be manifold");
     assert!(report.is_watertight, "Cube should be watertight");
-    assert_eq!(report.boundary_edge_count, 0, "Cube should have no boundary edges");
+    assert_eq!(
+        report.boundary_edge_count, 0,
+        "Cube should have no boundary edges"
+    );
     assert_eq!(
         report.non_manifold_edge_count, 0,
         "Cube should have no non-manifold edges"
@@ -595,7 +641,9 @@ fn generate_validation_files() {
 
     println!("\nValidation instructions:");
     println!("1. Open each file in MeshLab");
-    println!("2. Run: Filters > Quality Measure and Topology Checks > Compute Topological Measures");
+    println!(
+        "2. Run: Filters > Quality Measure and Topology Checks > Compute Topological Measures"
+    );
     println!("3. Verify: 'Mesh is two-manifold' = Yes");
     println!("4. Verify: 'Mesh is watertight' = Yes (for closed meshes)");
     println!("\nFiles location: {:?}", output_dir);

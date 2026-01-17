@@ -77,8 +77,8 @@ impl MeshBuffers {
         let vertex_count = mesh.vertices.len();
 
         // Check mesh size limits
-        let max_triangles = ctx.max_storage_buffer_size() as usize
-            / std::mem::size_of::<GpuTriangle>();
+        let max_triangles =
+            ctx.max_storage_buffer_size() as usize / std::mem::size_of::<GpuTriangle>();
         if triangle_count > max_triangles {
             return Err(GpuError::MeshTooLarge {
                 triangles: triangle_count,
@@ -120,17 +120,21 @@ impl MeshBuffers {
             .collect();
 
         // Create GPU buffers
-        let triangles = ctx.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("mesh_triangles"),
-            contents: bytemuck::cast_slice(&gpu_triangles),
-            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC,
-        });
+        let triangles = ctx
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("mesh_triangles"),
+                contents: bytemuck::cast_slice(&gpu_triangles),
+                usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC,
+            });
 
-        let vertices = ctx.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("mesh_vertices"),
-            contents: bytemuck::cast_slice(&gpu_vertices),
-            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC,
-        });
+        let vertices = ctx
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("mesh_vertices"),
+                contents: bytemuck::cast_slice(&gpu_vertices),
+                usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC,
+            });
 
         Ok(Self {
             triangles,
@@ -221,11 +225,13 @@ impl SdfGridBuffers {
         };
 
         // Create uniform buffer for grid parameters
-        let params = ctx.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("sdf_grid_params"),
-            contents: bytemuck::bytes_of(&grid_params),
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        });
+        let params = ctx
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("sdf_grid_params"),
+                contents: bytemuck::bytes_of(&grid_params),
+                usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            });
 
         // Create storage buffer for SDF values
         let values_size = (total_voxels * std::mem::size_of::<f32>()) as u64;

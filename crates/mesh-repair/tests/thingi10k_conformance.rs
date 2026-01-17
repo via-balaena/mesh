@@ -18,8 +18,8 @@
 //! Place STL files in: tests/fixtures/thingi10k/
 
 use mesh_repair::{
-    decimate_mesh, fill_holes, load_mesh, remesh_isotropic, save_mesh, validate_mesh,
-    weld_vertices, DecimateParams, RemeshParams,
+    DecimateParams, RemeshParams, decimate_mesh, fill_holes, load_mesh, remesh_isotropic,
+    save_mesh, validate_mesh, weld_vertices,
 };
 use std::path::PathBuf;
 

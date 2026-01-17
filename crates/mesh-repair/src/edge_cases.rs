@@ -5,21 +5,20 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::validate::{validate_mesh, validate_mesh_data, ValidationOptions};
-    use crate::repair::{
-        repair_mesh, repair_mesh_with_config, RepairParams,
-        remove_degenerate_triangles, remove_degenerate_triangles_enhanced,
-        weld_vertices, remove_unreferenced_vertices, compute_vertex_normals,
-        remove_duplicate_faces, fix_non_manifold_edges,
-    };
-    use crate::winding::fix_winding_order;
-    use crate::holes::{fill_holes, detect_holes};
-    use crate::components::{
-        find_connected_components, split_into_components, keep_largest_component,
-        remove_small_components,
-    };
-    use crate::intersect::{detect_self_intersections, IntersectionParams};
     use crate::adjacency::MeshAdjacency;
+    use crate::components::{
+        find_connected_components, keep_largest_component, remove_small_components,
+        split_into_components,
+    };
+    use crate::holes::{detect_holes, fill_holes};
+    use crate::intersect::{IntersectionParams, detect_self_intersections};
+    use crate::repair::{
+        RepairParams, compute_vertex_normals, fix_non_manifold_edges, remove_degenerate_triangles,
+        remove_degenerate_triangles_enhanced, remove_duplicate_faces, remove_unreferenced_vertices,
+        repair_mesh, repair_mesh_with_config, weld_vertices,
+    };
+    use crate::validate::{ValidationOptions, validate_mesh, validate_mesh_data};
+    use crate::winding::fix_winding_order;
     use crate::{Mesh, Vertex};
 
     // ==================== Empty Mesh Tests ====================
@@ -542,9 +541,12 @@ mod tests {
     #[test]
     fn test_all_nan_coordinates() {
         let mut mesh = Mesh::new();
-        mesh.vertices.push(Vertex::from_coords(f64::NAN, f64::NAN, f64::NAN));
-        mesh.vertices.push(Vertex::from_coords(f64::NAN, f64::NAN, f64::NAN));
-        mesh.vertices.push(Vertex::from_coords(f64::NAN, f64::NAN, f64::NAN));
+        mesh.vertices
+            .push(Vertex::from_coords(f64::NAN, f64::NAN, f64::NAN));
+        mesh.vertices
+            .push(Vertex::from_coords(f64::NAN, f64::NAN, f64::NAN));
+        mesh.vertices
+            .push(Vertex::from_coords(f64::NAN, f64::NAN, f64::NAN));
         mesh.faces.push([0, 1, 2]);
 
         let result = validate_mesh_data(&mesh, &ValidationOptions::collect_all()).unwrap();
@@ -556,7 +558,8 @@ mod tests {
     #[test]
     fn test_positive_infinity_validation() {
         let mut mesh = Mesh::new();
-        mesh.vertices.push(Vertex::from_coords(f64::INFINITY, 0.0, 0.0));
+        mesh.vertices
+            .push(Vertex::from_coords(f64::INFINITY, 0.0, 0.0));
         mesh.vertices.push(Vertex::from_coords(1.0, 0.0, 0.0));
         mesh.vertices.push(Vertex::from_coords(0.0, 1.0, 0.0));
         mesh.faces.push([0, 1, 2]);
@@ -568,7 +571,8 @@ mod tests {
     #[test]
     fn test_negative_infinity_validation() {
         let mut mesh = Mesh::new();
-        mesh.vertices.push(Vertex::from_coords(f64::NEG_INFINITY, 0.0, 0.0));
+        mesh.vertices
+            .push(Vertex::from_coords(f64::NEG_INFINITY, 0.0, 0.0));
         mesh.vertices.push(Vertex::from_coords(1.0, 0.0, 0.0));
         mesh.vertices.push(Vertex::from_coords(0.0, 1.0, 0.0));
         mesh.faces.push([0, 1, 2]);
@@ -580,8 +584,10 @@ mod tests {
     #[test]
     fn test_mixed_nan_infinity() {
         let mut mesh = Mesh::new();
-        mesh.vertices.push(Vertex::from_coords(f64::NAN, f64::INFINITY, 0.0));
-        mesh.vertices.push(Vertex::from_coords(1.0, 0.0, f64::NEG_INFINITY));
+        mesh.vertices
+            .push(Vertex::from_coords(f64::NAN, f64::INFINITY, 0.0));
+        mesh.vertices
+            .push(Vertex::from_coords(1.0, 0.0, f64::NEG_INFINITY));
         mesh.vertices.push(Vertex::from_coords(0.0, 1.0, 0.0));
         mesh.faces.push([0, 1, 2]);
 
@@ -921,10 +927,9 @@ mod tests {
         mesh.faces.push([0, 1, 2]);
 
         let removed = remove_degenerate_triangles_enhanced(
-            &mut mesh,
-            0.0,    // No area threshold
-            100.0,  // Max aspect ratio
-            0.0,    // No edge length threshold
+            &mut mesh, 0.0,   // No area threshold
+            100.0, // Max aspect ratio
+            0.0,   // No edge length threshold
         );
 
         // Should be removed due to high aspect ratio
@@ -938,14 +943,14 @@ mod tests {
         let sqrt3_half = 0.866025;
         mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 0.0));
         mesh.vertices.push(Vertex::from_coords(1.0, 0.0, 0.0));
-        mesh.vertices.push(Vertex::from_coords(0.5, sqrt3_half, 0.0));
+        mesh.vertices
+            .push(Vertex::from_coords(0.5, sqrt3_half, 0.0));
         mesh.faces.push([0, 1, 2]);
 
         let removed = remove_degenerate_triangles_enhanced(
-            &mut mesh,
-            1e-12,  // Very small area threshold
-            100.0,  // Max aspect ratio
-            1e-12,  // Very small edge threshold
+            &mut mesh, 1e-12, // Very small area threshold
+            100.0, // Max aspect ratio
+            1e-12, // Very small edge threshold
         );
 
         // Should NOT be removed

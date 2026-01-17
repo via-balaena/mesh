@@ -4,9 +4,9 @@ use hashbrown::HashSet;
 use std::collections::VecDeque;
 use tracing::{debug, info};
 
+use crate::Mesh;
 use crate::adjacency::MeshAdjacency;
 use crate::error::MeshResult;
-use crate::Mesh;
 
 /// Fix winding order so all faces have consistent orientation.
 ///

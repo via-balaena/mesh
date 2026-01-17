@@ -332,12 +332,7 @@ impl Bvh {
         result
     }
 
-    fn query_recursive(
-        node: &BvhNode,
-        query_bbox: &Aabb,
-        tolerance: f64,
-        result: &mut Vec<usize>,
-    ) {
+    fn query_recursive(node: &BvhNode, query_bbox: &Aabb, tolerance: f64, result: &mut Vec<usize>) {
         match node {
             BvhNode::Leaf { bbox, triangles } => {
                 if bbox.intersects(query_bbox, tolerance) {
@@ -710,7 +705,9 @@ fn handle_non_overlapping(mesh_a: &Mesh, mesh_b: &Mesh, operation: BooleanOp) ->
             let offset = result.vertices.len() as u32;
             result.vertices.extend(mesh_b.vertices.iter().cloned());
             for face in &mesh_b.faces {
-                result.faces.push([face[0] + offset, face[1] + offset, face[2] + offset]);
+                result
+                    .faces
+                    .push([face[0] + offset, face[1] + offset, face[2] + offset]);
             }
             result
         }
@@ -749,7 +746,9 @@ fn handle_non_intersecting(mesh_a: &Mesh, mesh_b: &Mesh, operation: BooleanOp) -
             let offset = result.vertices.len() as u32;
             result.vertices.extend(mesh_b.vertices.iter().cloned());
             for face in &mesh_b.faces {
-                result.faces.push([face[0] + offset, face[1] + offset, face[2] + offset]);
+                result
+                    .faces
+                    .push([face[0] + offset, face[1] + offset, face[2] + offset]);
             }
             result
         }
@@ -836,11 +835,7 @@ fn ray_triangle_intersect(
 
 /// Find all triangle-triangle intersections between two meshes.
 /// Uses BVH acceleration for O(n log n + k) complexity instead of O(n*m).
-fn find_mesh_intersections(
-    mesh_a: &Mesh,
-    mesh_b: &Mesh,
-    tolerance: f64,
-) -> Vec<IntersectionInfo> {
+fn find_mesh_intersections(mesh_a: &Mesh, mesh_b: &Mesh, tolerance: f64) -> Vec<IntersectionInfo> {
     let mut intersections = Vec::new();
 
     // Build BVH for mesh B (the one we query against)
@@ -868,9 +863,7 @@ fn find_mesh_intersections(
             let coplanarity = check_coplanarity(a0, a1, a2, b0, b1, b2, tolerance);
 
             let intersects = match coplanarity {
-                CoplanarityResult::NotCoplanar => {
-                    triangles_intersect(a0, a1, a2, b0, b1, b2)
-                }
+                CoplanarityResult::NotCoplanar => triangles_intersect(a0, a1, a2, b0, b1, b2),
                 CoplanarityResult::CoplanarSameOrientation
                 | CoplanarityResult::CoplanarOppositeOrientation => {
                     // For coplanar triangles, project to 2D and check overlap
@@ -912,11 +905,7 @@ fn triangles_intersect(
     b2: &Point3<f64>,
 ) -> bool {
     // Check if any edge of A intersects triangle B
-    let edges_a = [
-        (a0, a1),
-        (a1, a2),
-        (a2, a0),
-    ];
+    let edges_a = [(a0, a1), (a1, a2), (a2, a0)];
 
     for (e0, e1) in &edges_a {
         let dir = *e1 - **e0;
@@ -924,27 +913,25 @@ fn triangles_intersect(
             // Check if intersection is within edge
             let t = compute_intersection_t(e0, e1, b0, b1, b2);
             if let Some(t) = t
-                && (0.0..=1.0).contains(&t) {
-                    return true;
-                }
+                && (0.0..=1.0).contains(&t)
+            {
+                return true;
+            }
         }
     }
 
     // Check if any edge of B intersects triangle A
-    let edges_b = [
-        (b0, b1),
-        (b1, b2),
-        (b2, b0),
-    ];
+    let edges_b = [(b0, b1), (b1, b2), (b2, b0)];
 
     for (e0, e1) in &edges_b {
         let dir = *e1 - **e0;
         if ray_triangle_intersect(e0, &dir, a0, a1, a2) {
             let t = compute_intersection_t(e0, e1, a0, a1, a2);
             if let Some(t) = t
-                && (0.0..=1.0).contains(&t) {
-                    return true;
-                }
+                && (0.0..=1.0).contains(&t)
+            {
+                return true;
+            }
         }
     }
 
@@ -1042,17 +1029,23 @@ fn add_faces_with_classification_and_coplanar(
             let new_face: [u32; 3] = [
                 *vertex_map.entry(face[0]).or_insert_with(|| {
                     let idx = result.vertices.len() as u32;
-                    result.vertices.push(source.vertices[face[0] as usize].clone());
+                    result
+                        .vertices
+                        .push(source.vertices[face[0] as usize].clone());
                     idx
                 }),
                 *vertex_map.entry(face[1]).or_insert_with(|| {
                     let idx = result.vertices.len() as u32;
-                    result.vertices.push(source.vertices[face[1] as usize].clone());
+                    result
+                        .vertices
+                        .push(source.vertices[face[1] as usize].clone());
                     idx
                 }),
                 *vertex_map.entry(face[2]).or_insert_with(|| {
                     let idx = result.vertices.len() as u32;
-                    result.vertices.push(source.vertices[face[2] as usize].clone());
+                    result
+                        .vertices
+                        .push(source.vertices[face[2] as usize].clone());
                     idx
                 }),
             ];
@@ -1092,17 +1085,23 @@ fn add_faces_inverted_with_coplanar(
             let new_face: [u32; 3] = [
                 *vertex_map.entry(face[0]).or_insert_with(|| {
                     let idx = result.vertices.len() as u32;
-                    result.vertices.push(source.vertices[face[0] as usize].clone());
+                    result
+                        .vertices
+                        .push(source.vertices[face[0] as usize].clone());
                     idx
                 }),
                 *vertex_map.entry(face[2]).or_insert_with(|| {
                     let idx = result.vertices.len() as u32;
-                    result.vertices.push(source.vertices[face[2] as usize].clone());
+                    result
+                        .vertices
+                        .push(source.vertices[face[2] as usize].clone());
                     idx
                 }),
                 *vertex_map.entry(face[1]).or_insert_with(|| {
                     let idx = result.vertices.len() as u32;
-                    result.vertices.push(source.vertices[face[1] as usize].clone());
+                    result
+                        .vertices
+                        .push(source.vertices[face[1] as usize].clone());
                     idx
                 }),
             ];
@@ -1149,7 +1148,8 @@ fn weld_vertices(mesh: &mut Mesh, tolerance: f64) {
     mesh.vertices = kept_vertices;
 
     // Remove degenerate faces
-    mesh.faces.retain(|f| f[0] != f[1] && f[1] != f[2] && f[0] != f[2]);
+    mesh.faces
+        .retain(|f| f[0] != f[1] && f[1] != f[2] && f[0] != f[2]);
 }
 
 /// Fix non-manifold edges by removing duplicate faces sharing the same edge.
@@ -1350,7 +1350,10 @@ pub struct BooleanOffsetStats {
 /// let result = offset_boolean(&mesh, &params)?;
 /// println!("Offset mesh has {} triangles", result.mesh.faces.len());
 /// ```
-pub fn offset_boolean(mesh: &Mesh, params: &BooleanOffsetParams) -> MeshResult<BooleanOffsetResult> {
+pub fn offset_boolean(
+    mesh: &Mesh,
+    params: &BooleanOffsetParams,
+) -> MeshResult<BooleanOffsetResult> {
     use std::time::Instant;
 
     if mesh.vertices.is_empty() || mesh.faces.is_empty() {
@@ -1384,11 +1387,7 @@ pub fn offset_boolean(mesh: &Mesh, params: &BooleanOffsetParams) -> MeshResult<B
 
     // 1. Generate spheres at vertices
     for (vi, vertex) in mesh.vertices.iter().enumerate() {
-        let sphere = generate_sphere(
-            &vertex.position,
-            offset,
-            params.sphere_segments,
-        );
+        let sphere = generate_sphere(&vertex.position, offset, params.sphere_segments);
         primitives.push(sphere);
 
         // For negative offset (shrinking), we'll handle it differently
@@ -1521,9 +1520,7 @@ pub fn shell_boolean(
     let params = params.unwrap_or(&default_params);
 
     if thickness <= 0.0 {
-        return Err(MeshError::repair_failed(
-            "Shell thickness must be positive",
-        ));
+        return Err(MeshError::repair_failed("Shell thickness must be positive"));
     }
 
     // Generate outer offset (expand by half thickness)
@@ -1553,7 +1550,12 @@ pub fn shell_boolean(
         ..Default::default()
     };
 
-    let result = boolean_operation(&outer.mesh, &inner_inverted, BooleanOp::Difference, &bool_params)?;
+    let result = boolean_operation(
+        &outer.mesh,
+        &inner_inverted,
+        BooleanOp::Difference,
+        &bool_params,
+    )?;
 
     Ok(result.mesh)
 }
@@ -1663,11 +1665,8 @@ fn generate_sphere(center: &Point3<f64>, radius: f64, segments: usize) -> Mesh {
         for i in 0..ring_size {
             let next = (i + 1) % ring_size;
 
-            mesh.faces.push([
-                ring_start + i,
-                ring_start + next,
-                next_ring_start + i,
-            ]);
+            mesh.faces
+                .push([ring_start + i, ring_start + next, next_ring_start + i]);
             mesh.faces.push([
                 ring_start + next,
                 next_ring_start + next,
@@ -1680,19 +1679,15 @@ fn generate_sphere(center: &Point3<f64>, radius: f64, segments: usize) -> Mesh {
     let last_ring_start = 1 + ((segments - 2) as u32) * ring_size;
     for i in 0..ring_size {
         let next = (i + 1) % ring_size;
-        mesh.faces.push([last_ring_start + i, last_ring_start + next, south_pole_idx]);
+        mesh.faces
+            .push([last_ring_start + i, last_ring_start + next, south_pole_idx]);
     }
 
     mesh
 }
 
 /// Generate a cylinder mesh between two points.
-fn generate_cylinder(
-    p0: &Point3<f64>,
-    p1: &Point3<f64>,
-    radius: f64,
-    segments: usize,
-) -> Mesh {
+fn generate_cylinder(p0: &Point3<f64>, p1: &Point3<f64>, radius: f64, segments: usize) -> Mesh {
     let mut mesh = Mesh::new();
     let segments = segments.max(3);
 
@@ -1772,9 +1767,12 @@ fn generate_triangular_prism(
     mesh.vertices.push(Vertex::new(*v2));
 
     // Top triangle vertices (offset along normal)
-    mesh.vertices.push(Vertex::new(Point3::from(v0.coords + offset)));
-    mesh.vertices.push(Vertex::new(Point3::from(v1.coords + offset)));
-    mesh.vertices.push(Vertex::new(Point3::from(v2.coords + offset)));
+    mesh.vertices
+        .push(Vertex::new(Point3::from(v0.coords + offset)));
+    mesh.vertices
+        .push(Vertex::new(Point3::from(v1.coords + offset)));
+    mesh.vertices
+        .push(Vertex::new(Point3::from(v2.coords + offset)));
 
     // Bottom face (reversed winding for outward normal)
     mesh.faces.push([0, 2, 1]);
@@ -1808,13 +1806,23 @@ impl Mesh {
 
     /// Perform boolean difference (subtract other from self).
     pub fn boolean_difference(&self, other: &Mesh) -> MeshResult<Mesh> {
-        let result = boolean_operation(self, other, BooleanOp::Difference, &BooleanParams::default())?;
+        let result = boolean_operation(
+            self,
+            other,
+            BooleanOp::Difference,
+            &BooleanParams::default(),
+        )?;
         Ok(result.mesh)
     }
 
     /// Perform boolean intersection with another mesh.
     pub fn boolean_intersection(&self, other: &Mesh) -> MeshResult<Mesh> {
-        let result = boolean_operation(self, other, BooleanOp::Intersection, &BooleanParams::default())?;
+        let result = boolean_operation(
+            self,
+            other,
+            BooleanOp::Intersection,
+            &BooleanParams::default(),
+        )?;
         Ok(result.mesh)
     }
 
@@ -1848,7 +1856,10 @@ impl Mesh {
     }
 
     /// Create an offset mesh with custom parameters.
-    pub fn offset_boolean_with_params(&self, params: &BooleanOffsetParams) -> MeshResult<BooleanOffsetResult> {
+    pub fn offset_boolean_with_params(
+        &self,
+        params: &BooleanOffsetParams,
+    ) -> MeshResult<BooleanOffsetResult> {
         offset_boolean(self, params)
     }
 
@@ -1953,7 +1964,10 @@ pub fn boolean_operation_with_progress(
 
     // Phase 2: Find intersection edges between meshes (using BVH acceleration)
     tracker.set(10);
-    if !tracker.maybe_callback(callback, "Building BVH and detecting intersections".to_string()) {
+    if !tracker.maybe_callback(
+        callback,
+        "Building BVH and detecting intersections".to_string(),
+    ) {
         return Ok(BooleanResult {
             mesh: Mesh::new(),
             intersection_edge_count: 0,
@@ -2178,17 +2192,23 @@ mod tests {
         // 12 faces (2 per side)
         let faces = [
             // Front
-            [0, 1, 2], [0, 2, 3],
+            [0, 1, 2],
+            [0, 2, 3],
             // Back
-            [5, 4, 7], [5, 7, 6],
+            [5, 4, 7],
+            [5, 7, 6],
             // Top
-            [3, 2, 6], [3, 6, 7],
+            [3, 2, 6],
+            [3, 6, 7],
             // Bottom
-            [4, 5, 1], [4, 1, 0],
+            [4, 5, 1],
+            [4, 1, 0],
             // Left
-            [4, 0, 3], [4, 3, 7],
+            [4, 0, 3],
+            [4, 3, 7],
             // Right
-            [1, 5, 6], [1, 6, 2],
+            [1, 5, 6],
+            [1, 6, 2],
         ];
 
         for f in &faces {
@@ -2203,7 +2223,13 @@ mod tests {
         let cube_a = create_cube(Point3::new(0.0, 0.0, 0.0), 1.0);
         let cube_b = create_cube(Point3::new(10.0, 0.0, 0.0), 1.0);
 
-        let result = boolean_operation(&cube_a, &cube_b, BooleanOp::Union, &BooleanParams::default()).unwrap();
+        let result = boolean_operation(
+            &cube_a,
+            &cube_b,
+            BooleanOp::Union,
+            &BooleanParams::default(),
+        )
+        .unwrap();
 
         assert_eq!(result.mesh.vertices.len(), 16); // 8 + 8
         assert_eq!(result.mesh.faces.len(), 24); // 12 + 12
@@ -2214,7 +2240,13 @@ mod tests {
         let cube_a = create_cube(Point3::new(0.0, 0.0, 0.0), 1.0);
         let cube_b = create_cube(Point3::new(10.0, 0.0, 0.0), 1.0);
 
-        let result = boolean_operation(&cube_a, &cube_b, BooleanOp::Difference, &BooleanParams::default()).unwrap();
+        let result = boolean_operation(
+            &cube_a,
+            &cube_b,
+            BooleanOp::Difference,
+            &BooleanParams::default(),
+        )
+        .unwrap();
 
         assert_eq!(result.mesh.vertices.len(), 8); // Just cube A
         assert_eq!(result.mesh.faces.len(), 12);
@@ -2225,7 +2257,13 @@ mod tests {
         let cube_a = create_cube(Point3::new(0.0, 0.0, 0.0), 1.0);
         let cube_b = create_cube(Point3::new(10.0, 0.0, 0.0), 1.0);
 
-        let result = boolean_operation(&cube_a, &cube_b, BooleanOp::Intersection, &BooleanParams::default()).unwrap();
+        let result = boolean_operation(
+            &cube_a,
+            &cube_b,
+            BooleanOp::Intersection,
+            &BooleanParams::default(),
+        )
+        .unwrap();
 
         assert!(result.mesh.vertices.is_empty()); // No overlap
         assert!(result.mesh.faces.is_empty());
@@ -2236,7 +2274,13 @@ mod tests {
         let cube_a = create_cube(Point3::new(0.0, 0.0, 0.0), 2.0);
         let cube_b = create_cube(Point3::new(1.0, 0.0, 0.0), 2.0);
 
-        let result = boolean_operation(&cube_a, &cube_b, BooleanOp::Union, &BooleanParams::default()).unwrap();
+        let result = boolean_operation(
+            &cube_a,
+            &cube_b,
+            BooleanOp::Union,
+            &BooleanParams::default(),
+        )
+        .unwrap();
 
         // Should have some faces
         assert!(!result.mesh.faces.is_empty());
@@ -2384,11 +2428,8 @@ mod tests {
 
         // Create vertices for a simple case
         for i in 0..6 {
-            mesh.vertices.push(Vertex::new(Point3::new(
-                i as f64,
-                0.0,
-                0.0,
-            )));
+            mesh.vertices
+                .push(Vertex::new(Point3::new(i as f64, 0.0, 0.0)));
         }
 
         // Add 3 faces sharing the same edge (0-1)
@@ -2479,7 +2520,11 @@ mod tests {
         // All vertices should be at radius from center
         for vertex in &sphere.vertices {
             let dist = (vertex.position - center).norm();
-            assert!((dist - 2.0).abs() < 1e-6, "Vertex at distance {} from center, expected 2.0", dist);
+            assert!(
+                (dist - 2.0).abs() < 1e-6,
+                "Vertex at distance {} from center, expected 2.0",
+                dist
+            );
         }
     }
 
@@ -2526,7 +2571,10 @@ mod tests {
             min_z = min_z.min(vertex.position.z);
             max_z = max_z.max(vertex.position.z);
         }
-        assert!((max_z - min_z - 2.0).abs() < 1e-6, "Prism height should be 2.0");
+        assert!(
+            (max_z - min_z - 2.0).abs() < 1e-6,
+            "Prism height should be 2.0"
+        );
     }
 
     #[test]
@@ -2537,7 +2585,12 @@ mod tests {
         // A triangulated cube has 18 unique edges:
         // - 12 edges on the wireframe
         // - 6 diagonal edges (one per quad face that's split into 2 triangles)
-        assert_eq!(edges.len(), 18, "Triangulated cube should have 18 unique edges, got {}", edges.len());
+        assert_eq!(
+            edges.len(),
+            18,
+            "Triangulated cube should have 18 unique edges, got {}",
+            edges.len()
+        );
     }
 
     #[test]
@@ -2553,8 +2606,14 @@ mod tests {
 
         // Should have generated primitives
         assert_eq!(result.sphere_count, 8, "Cube has 8 vertices -> 8 spheres");
-        assert_eq!(result.cylinder_count, 18, "Triangulated cube has 18 edges -> 18 cylinders");
-        assert_eq!(result.prism_count, 12, "Cube has 12 triangular faces -> 12 prisms");
+        assert_eq!(
+            result.cylinder_count, 18,
+            "Triangulated cube has 18 edges -> 18 cylinders"
+        );
+        assert_eq!(
+            result.prism_count, 12,
+            "Cube has 12 triangular faces -> 12 prisms"
+        );
 
         // Result should be larger than original
         let result_bounds = compute_bbox(&result.mesh);
@@ -2644,7 +2703,11 @@ mod tests {
         // All normals should be normalized (or zero for degenerate cases)
         for normal in &normals {
             let len = normal.norm();
-            assert!(len < 1e-6 || (len - 1.0).abs() < 1e-6, "Normal should be unit or zero, got {}", len);
+            assert!(
+                len < 1e-6 || (len - 1.0).abs() < 1e-6,
+                "Normal should be unit or zero, got {}",
+                len
+            );
         }
     }
 }

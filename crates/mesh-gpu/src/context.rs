@@ -82,8 +82,8 @@ impl GpuContext {
     /// ```
     pub fn get() -> Option<&'static GpuContext> {
         GPU_CONTEXT
-            .get_or_init(|| {
-                match pollster::block_on(Self::try_init(GpuDevicePreference::Auto)) {
+            .get_or_init(
+                || match pollster::block_on(Self::try_init(GpuDevicePreference::Auto)) {
                     Ok(ctx) => {
                         info!(
                             adapter = %ctx.adapter_info.name,
@@ -96,8 +96,8 @@ impl GpuContext {
                         warn!("GPU initialization failed: {}", e);
                         None
                     }
-                }
-            })
+                },
+            )
             .as_ref()
     }
 

@@ -66,14 +66,26 @@ impl std::fmt::Display for BoundaryAnalysis {
         }
 
         if !self.non_manifold_vertices.is_empty() {
-            writeln!(f, "  Non-manifold boundary vertices: {:?}", self.non_manifold_vertices)?;
+            writeln!(
+                f,
+                "  Non-manifold boundary vertices: {:?}",
+                self.non_manifold_vertices
+            )?;
         }
 
         if !self.orphan_edges.is_empty() {
-            writeln!(f, "  Orphan edges: {} (couldn't form loops)", self.orphan_edges.len())?;
+            writeln!(
+                f,
+                "  Orphan edges: {} (couldn't form loops)",
+                self.orphan_edges.len()
+            )?;
         }
 
-        writeln!(f, "  Valid for rim generation: {}", if self.is_valid { "yes" } else { "NO" })?;
+        writeln!(
+            f,
+            "  Valid for rim generation: {}",
+            if self.is_valid { "yes" } else { "NO" }
+        )?;
 
         Ok(())
     }
@@ -168,7 +180,11 @@ pub fn analyze_boundary_with_adjacency(adjacency: &MeshAdjacency) -> BoundaryAna
     let mut orphan_edges = Vec::new();
 
     for &(start_a, start_b) in &boundary_edges {
-        let edge_key = if start_a < start_b { (start_a, start_b) } else { (start_b, start_a) };
+        let edge_key = if start_a < start_b {
+            (start_a, start_b)
+        } else {
+            (start_b, start_a)
+        };
         if visited_edges.contains(&edge_key) {
             continue;
         }
@@ -177,7 +193,9 @@ pub fn analyze_boundary_with_adjacency(adjacency: &MeshAdjacency) -> BoundaryAna
         match trace_boundary_loop(start_a, start_b, &boundary_neighbors, &mut visited_edges) {
             Some(loop_vertices) => {
                 if loop_vertices.len() >= 3 {
-                    loops.push(BoundaryLoop { vertices: loop_vertices });
+                    loops.push(BoundaryLoop {
+                        vertices: loop_vertices,
+                    });
                 }
             }
             None => {
@@ -222,7 +240,11 @@ fn trace_boundary_loop(
     let mut prev = start;
 
     // Mark the starting edge as visited
-    let edge_key = if start < next { (start, next) } else { (next, start) };
+    let edge_key = if start < next {
+        (start, next)
+    } else {
+        (next, start)
+    };
     visited_edges.insert(edge_key);
 
     loop {
@@ -236,7 +258,11 @@ fn trace_boundary_loop(
         match next_vertex {
             Some(&n) => {
                 // Mark this edge as visited
-                let edge_key = if current < n { (current, n) } else { (n, current) };
+                let edge_key = if current < n {
+                    (current, n)
+                } else {
+                    (n, current)
+                };
 
                 if n == start {
                     // Loop closed successfully
@@ -530,20 +556,20 @@ mod tests {
         let mut mesh = Mesh::new();
 
         // Outer boundary (square)
-        mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 0.0));   // 0
-        mesh.vertices.push(Vertex::from_coords(20.0, 0.0, 0.0));  // 1
+        mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 0.0)); // 0
+        mesh.vertices.push(Vertex::from_coords(20.0, 0.0, 0.0)); // 1
         mesh.vertices.push(Vertex::from_coords(20.0, 10.0, 0.0)); // 2
-        mesh.vertices.push(Vertex::from_coords(0.0, 10.0, 0.0));  // 3
+        mesh.vertices.push(Vertex::from_coords(0.0, 10.0, 0.0)); // 3
 
         // First hole (triangle shape at left)
-        mesh.vertices.push(Vertex::from_coords(3.0, 3.0, 0.0));   // 4
-        mesh.vertices.push(Vertex::from_coords(5.0, 3.0, 0.0));   // 5
-        mesh.vertices.push(Vertex::from_coords(4.0, 6.0, 0.0));   // 6
+        mesh.vertices.push(Vertex::from_coords(3.0, 3.0, 0.0)); // 4
+        mesh.vertices.push(Vertex::from_coords(5.0, 3.0, 0.0)); // 5
+        mesh.vertices.push(Vertex::from_coords(4.0, 6.0, 0.0)); // 6
 
         // Second hole (triangle shape at right)
-        mesh.vertices.push(Vertex::from_coords(15.0, 3.0, 0.0));  // 7
-        mesh.vertices.push(Vertex::from_coords(17.0, 3.0, 0.0));  // 8
-        mesh.vertices.push(Vertex::from_coords(16.0, 6.0, 0.0));  // 9
+        mesh.vertices.push(Vertex::from_coords(15.0, 3.0, 0.0)); // 7
+        mesh.vertices.push(Vertex::from_coords(17.0, 3.0, 0.0)); // 8
+        mesh.vertices.push(Vertex::from_coords(16.0, 6.0, 0.0)); // 9
 
         // Triangulate the outer boundary (simplified - just corners)
         mesh.faces.push([0, 1, 2]);
@@ -632,7 +658,11 @@ mod tests {
         let analysis = analyze_boundary(&mesh);
 
         // Should find multiple boundary loops
-        assert!(analysis.loops.len() >= 2, "Expected at least 2 loops, got {}", analysis.loops.len());
+        assert!(
+            analysis.loops.len() >= 2,
+            "Expected at least 2 loops, got {}",
+            analysis.loops.len()
+        );
     }
 
     #[test]

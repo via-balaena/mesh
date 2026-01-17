@@ -11,10 +11,7 @@ pub enum GpuError {
 
     /// GPU ran out of memory during computation.
     #[error("GPU out of memory: required {required} bytes, available {available} bytes")]
-    OutOfMemory {
-        required: u64,
-        available: u64,
-    },
+    OutOfMemory { required: u64, available: u64 },
 
     /// Shader compilation failed.
     #[error("shader compilation failed: {0}")]
@@ -42,10 +39,7 @@ pub enum GpuError {
 
     /// Mesh too large for GPU.
     #[error("mesh too large for GPU: {triangles} triangles, max supported: {max}")]
-    MeshTooLarge {
-        triangles: usize,
-        max: usize,
-    },
+    MeshTooLarge { triangles: usize, max: usize },
 }
 
 /// Result type for GPU operations.

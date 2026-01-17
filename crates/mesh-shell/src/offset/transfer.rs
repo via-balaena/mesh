@@ -30,7 +30,13 @@ pub fn transfer_vertex_data(original: &Mesh, output: &mut Mesh) -> ShellResult<(
     let vertices: Vec<parry3d::math::Point<f32>> = original
         .vertices
         .iter()
-        .map(|v| parry3d::math::Point::new(v.position.x as f32, v.position.y as f32, v.position.z as f32))
+        .map(|v| {
+            parry3d::math::Point::new(
+                v.position.x as f32,
+                v.position.y as f32,
+                v.position.z as f32,
+            )
+        })
         .collect();
 
     let indices: Vec<[u32; 3]> = original.faces.clone();
@@ -122,7 +128,11 @@ pub fn transfer_vertex_data(original: &Mesh, output: &mut Mesh) -> ShellResult<(
     }
 
     let with_tags = output.vertices.iter().filter(|v| v.tag.is_some()).count();
-    let with_offsets = output.vertices.iter().filter(|v| v.offset.is_some()).count();
+    let with_offsets = output
+        .vertices
+        .iter()
+        .filter(|v| v.offset.is_some())
+        .count();
 
     debug!(
         with_tags,

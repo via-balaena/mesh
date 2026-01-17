@@ -118,12 +118,12 @@ pub mod surface_nets;
 
 // Re-export commonly used types
 pub use collision::{
-    detect_self_intersections_gpu, try_detect_self_intersections_gpu, GpuCollisionParams,
-    GpuCollisionResult,
+    GpuCollisionParams, GpuCollisionResult, detect_self_intersections_gpu,
+    try_detect_self_intersections_gpu,
 };
 pub use context::{GpuContext, GpuDevicePreference};
 pub use error::{GpuError, GpuResult};
-pub use sdf::{compute_sdf_gpu, try_compute_sdf_gpu, GpuSdfParams, GpuSdfResult};
+pub use sdf::{GpuSdfParams, GpuSdfResult, compute_sdf_gpu, try_compute_sdf_gpu};
 pub use surface_nets::{
-    extract_isosurface_gpu, try_extract_isosurface_gpu, GpuSurfaceNetsParams, GpuSurfaceNetsResult,
+    GpuSurfaceNetsParams, GpuSurfaceNetsResult, extract_isosurface_gpu, try_extract_isosurface_gpu,
 };

@@ -91,13 +91,17 @@ impl FitTemplate {
 
     /// Get the position of a landmark control region.
     pub fn get_landmark_position(&self, name: &str) -> Option<Point3<f64>> {
-        self.control_regions.get(name).and_then(|r| match &r.definition {
-            RegionDefinition::Point(p) => Some(*p),
-            RegionDefinition::Vertices(indices) if indices.len() == 1 => {
-                self.mesh.vertices.get(indices[0] as usize).map(|v| v.position)
-            }
-            _ => None,
-        })
+        self.control_regions
+            .get(name)
+            .and_then(|r| match &r.definition {
+                RegionDefinition::Point(p) => Some(*p),
+                RegionDefinition::Vertices(indices) if indices.len() == 1 => self
+                    .mesh
+                    .vertices
+                    .get(indices[0] as usize)
+                    .map(|v| v.position),
+                _ => None,
+            })
     }
 
     /// List all control region names.
@@ -179,7 +183,8 @@ impl FitTemplate {
         if !params.measurement_targets.is_empty() {
             for (name, measurement) in &params.measurement_targets {
                 if let Some(region) = self.control_regions.get(name) {
-                    current_mesh = apply_measurement_constraint(&current_mesh, region, measurement)?;
+                    current_mesh =
+                        apply_measurement_constraint(&current_mesh, region, measurement)?;
                 }
             }
             stages_completed.push(FitStage::MeasurementAdjustment {
@@ -207,7 +212,10 @@ impl FitTemplate {
     }
 
     /// Fit the template to target measurements only.
-    pub fn fit_to_measurements(&self, measurements: HashMap<String, Measurement>) -> MeshResult<FitResult> {
+    pub fn fit_to_measurements(
+        &self,
+        measurements: HashMap<String, Measurement>,
+    ) -> MeshResult<FitResult> {
         let params = FitParams::default().with_measurements(measurements);
         self.fit(&params)
     }
@@ -346,29 +354,27 @@ impl ControlRegion {
                 }
                 vertices
             }
-            RegionDefinition::Bounds { min, max } => {
-                mesh.vertices
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, v)| {
-                        v.position.x >= min.x
-                            && v.position.x <= max.x
-                            && v.position.y >= min.y
-                            && v.position.y <= max.y
-                            && v.position.z >= min.z
-                            && v.position.z <= max.z
-                    })
-                    .map(|(i, _)| i as u32)
-                    .collect()
-            }
-            RegionDefinition::Sphere { center, radius } => {
-                mesh.vertices
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, v)| (v.position - center).norm() <= *radius)
-                    .map(|(i, _)| i as u32)
-                    .collect()
-            }
+            RegionDefinition::Bounds { min, max } => mesh
+                .vertices
+                .iter()
+                .enumerate()
+                .filter(|(_, v)| {
+                    v.position.x >= min.x
+                        && v.position.x <= max.x
+                        && v.position.y >= min.y
+                        && v.position.y <= max.y
+                        && v.position.z >= min.z
+                        && v.position.z <= max.z
+                })
+                .map(|(i, _)| i as u32)
+                .collect(),
+            RegionDefinition::Sphere { center, radius } => mesh
+                .vertices
+                .iter()
+                .enumerate()
+                .filter(|(_, v)| (v.position - center).norm() <= *radius)
+                .map(|(i, _)| i as u32)
+                .collect(),
             RegionDefinition::Cylinder {
                 axis_start,
                 axis_end,
@@ -661,8 +667,8 @@ fn apply_measurement_constraint(
                 .collect();
 
             // Very rough circumference estimate using bounding box
-            let centroid: Vector3<f64> = projected.iter().map(|p| p.coords).sum::<Vector3<f64>>()
-                / projected.len() as f64;
+            let centroid: Vector3<f64> =
+                projected.iter().map(|p| p.coords).sum::<Vector3<f64>>() / projected.len() as f64;
             let avg_radius = projected
                 .iter()
                 .map(|p| (p.coords - centroid).norm())
@@ -699,9 +705,15 @@ fn apply_measurement_constraint(
                 normal.cross(&Vector3::y()).normalize()
             };
 
-            let projections: Vec<f64> = projected.iter().map(|p| p.coords.dot(&perpendicular)).collect();
+            let projections: Vec<f64> = projected
+                .iter()
+                .map(|p| p.coords.dot(&perpendicular))
+                .collect();
             let min = projections.iter().copied().fold(f64::INFINITY, f64::min);
-            let max = projections.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            let max = projections
+                .iter()
+                .copied()
+                .fold(f64::NEG_INFINITY, f64::max);
 
             max - min
         }
@@ -718,7 +730,10 @@ fn apply_measurement_constraint(
             }
 
             let min = projections.iter().copied().fold(f64::INFINITY, f64::min);
-            let max = projections.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            let max = projections
+                .iter()
+                .copied()
+                .fold(f64::NEG_INFINITY, f64::max);
 
             max - min
         }
@@ -728,7 +743,9 @@ fn apply_measurement_constraint(
     let target_value = measurement.value;
     let diff = target_value - current_value;
 
-    if diff.abs() <= measurement.tolerance || (measurement.is_minimum && current_value >= target_value) {
+    if diff.abs() <= measurement.tolerance
+        || (measurement.is_minimum && current_value >= target_value)
+    {
         return Ok(mesh.clone());
     }
 
@@ -954,7 +971,10 @@ mod tests {
         let template = FitTemplate::new(mesh);
 
         let params = FitParams::default();
-        assert!(matches!(template.fit(&params), Err(MeshError::EmptyMesh { .. })));
+        assert!(matches!(
+            template.fit(&params),
+            Err(MeshError::EmptyMesh { .. })
+        ));
     }
 
     #[test]
@@ -993,12 +1013,15 @@ mod tests {
             "vertical",
             Point3::new(5.0, 5.0, 0.0),
             Point3::new(5.0, 5.0, 10.0),
-            10.0,  // Larger radius to include corner vertices
+            10.0, // Larger radius to include corner vertices
         );
 
         let indices = region.get_vertex_indices(&mesh);
         // With radius 10, should include apex at (5,5,10) and potentially others
-        assert!(!indices.is_empty(), "Should find at least some vertices in cylinder");
+        assert!(
+            !indices.is_empty(),
+            "Should find at least some vertices in cylinder"
+        );
     }
 
     #[test]

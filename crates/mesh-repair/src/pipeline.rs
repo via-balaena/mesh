@@ -26,16 +26,16 @@
 //! println!("Processed mesh with {} triangles", result.mesh.faces.len());
 //! ```
 
-use crate::decimate::{decimate_mesh, DecimateParams};
+use crate::Mesh;
+use crate::decimate::{DecimateParams, decimate_mesh};
 use crate::error::MeshResult;
 use crate::progress::ProgressCallback;
-use crate::remesh::RemeshResult;
 #[cfg(feature = "pipeline-config")]
 use crate::remesh::RemeshParams;
-use crate::repair::{compute_vertex_normals, repair_mesh_with_config, RepairParams};
-use crate::subdivide::{subdivide_mesh, SubdivideParams};
+use crate::remesh::RemeshResult;
+use crate::repair::{RepairParams, compute_vertex_normals, repair_mesh_with_config};
+use crate::subdivide::{SubdivideParams, subdivide_mesh};
 use crate::validate::MeshReport;
-use crate::Mesh;
 
 // =========================================================================
 // Pipeline Configuration (Serialization)
@@ -1026,10 +1026,7 @@ mod config_tests {
             .add_step(PipelineStep::Validate);
 
         let mesh = create_test_cube();
-        let result = Pipeline::new(mesh)
-            .run_config(&config)
-            .unwrap()
-            .finish();
+        let result = Pipeline::new(mesh).run_config(&config).unwrap().finish();
 
         // 1 for config name log + 3 steps
         assert!(result.stages_executed >= 3);
@@ -1044,10 +1041,7 @@ mod config_tests {
         assert!(!config.steps.is_empty());
 
         let mesh = create_test_cube();
-        let result = Pipeline::new(mesh)
-            .run_config(&config)
-            .unwrap()
-            .finish();
+        let result = Pipeline::new(mesh).run_config(&config).unwrap().finish();
 
         assert!(result.validation.is_some());
     }
@@ -1061,10 +1055,7 @@ mod config_tests {
 
         let mesh = create_test_cube();
         let original_count = mesh.faces.len();
-        let result = Pipeline::new(mesh)
-            .run_config(&config)
-            .unwrap()
-            .finish();
+        let result = Pipeline::new(mesh).run_config(&config).unwrap().finish();
 
         assert!(result.mesh.faces.len() <= original_count);
     }

@@ -7,7 +7,7 @@ use std::path::Path;
 use tracing::{debug, info, warn};
 
 use crate::error::{MeshError, MeshResult};
-use crate::validate::{validate_mesh_data, ValidationOptions};
+use crate::validate::{ValidationOptions, validate_mesh_data};
 use crate::{Mesh, Vertex};
 
 /// Supported mesh file formats.
@@ -62,10 +62,7 @@ pub fn load_mesh(path: &Path) -> MeshResult<Mesh> {
             "Bounding box: [{:.1}, {:.1}, {:.1}] to [{:.1}, {:.1}, {:.1}]",
             min.x, min.y, min.z, max.x, max.y, max.z
         );
-        debug!(
-            "Dimensions: {:.1} x {:.1} x {:.1}",
-            dims.x, dims.y, dims.z
-        );
+        debug!("Dimensions: {:.1} x {:.1} x {:.1}", dims.x, dims.y, dims.z);
 
         // Warn if dimensions seem unusually small or large
         let max_dim = dims.x.max(dims.y).max(dims.z);
@@ -233,10 +230,12 @@ fn load_ply(path: &Path) -> MeshResult<Mesh> {
     let parser = Parser::<ply_rs::ply::DefaultElement>::new();
 
     // Parse the PLY file
-    let ply = parser.read_ply(&mut reader).map_err(|e| MeshError::ParseError {
-        path: path.to_path_buf(),
-        details: format!("PLY parse error: {:?}", e),
-    })?;
+    let ply = parser
+        .read_ply(&mut reader)
+        .map_err(|e| MeshError::ParseError {
+            path: path.to_path_buf(),
+            details: format!("PLY parse error: {:?}", e),
+        })?;
 
     let mut mesh = Mesh::new();
 
@@ -254,14 +253,12 @@ fn load_ply(path: &Path) -> MeshResult<Mesh> {
                 vertex_element.get("nx"),
                 vertex_element.get("ny"),
                 vertex_element.get("nz"),
+            ) && let (Ok(nx), Ok(ny), Ok(nz)) = (
+                get_ply_float(Some(nx), "nx", path),
+                get_ply_float(Some(ny), "ny", path),
+                get_ply_float(Some(nz), "nz", path),
             ) {
-                if let (Ok(nx), Ok(ny), Ok(nz)) = (
-                    get_ply_float(Some(nx), "nx", path),
-                    get_ply_float(Some(ny), "ny", path),
-                    get_ply_float(Some(nz), "nz", path),
-                ) {
-                    vertex.normal = Some(nalgebra::Vector3::new(nx, ny, nz));
-                }
+                vertex.normal = Some(nalgebra::Vector3::new(nx, ny, nz));
             }
 
             // Try to load vertex colors if present (red, green, blue)
@@ -269,14 +266,12 @@ fn load_ply(path: &Path) -> MeshResult<Mesh> {
                 vertex_element.get("red"),
                 vertex_element.get("green"),
                 vertex_element.get("blue"),
+            ) && let (Ok(r), Ok(g), Ok(b)) = (
+                get_ply_u8(Some(r)),
+                get_ply_u8(Some(g)),
+                get_ply_u8(Some(b)),
             ) {
-                if let (Ok(r), Ok(g), Ok(b)) = (
-                    get_ply_u8(Some(r)),
-                    get_ply_u8(Some(g)),
-                    get_ply_u8(Some(b)),
-                ) {
-                    vertex.color = Some(crate::VertexColor::new(r, g, b));
-                }
+                vertex.color = Some(crate::VertexColor::new(r, g, b));
             }
 
             mesh.vertices.push(vertex);
@@ -305,22 +300,15 @@ fn load_ply(path: &Path) -> MeshResult<Mesh> {
             } else if let Some(Property::ListUInt(indices)) = indices {
                 if indices.len() >= 3 {
                     for i in 1..indices.len() - 1 {
-                        mesh.faces.push([
-                            indices[0] as u32,
-                            indices[i] as u32,
-                            indices[i + 1] as u32,
-                        ]);
+                        mesh.faces.push([indices[0], indices[i], indices[i + 1]]);
                     }
                 }
-            } else if let Some(Property::ListUChar(indices)) = indices {
-                if indices.len() >= 3 {
-                    for i in 1..indices.len() - 1 {
-                        mesh.faces.push([
-                            indices[0] as u32,
-                            indices[i] as u32,
-                            indices[i + 1] as u32,
-                        ]);
-                    }
+            } else if let Some(Property::ListUChar(indices)) = indices
+                && indices.len() >= 3
+            {
+                for i in 1..indices.len() - 1 {
+                    mesh.faces
+                        .push([indices[0] as u32, indices[i] as u32, indices[i + 1] as u32]);
                 }
             }
         }
@@ -336,11 +324,7 @@ fn load_ply(path: &Path) -> MeshResult<Mesh> {
 }
 
 /// Helper to extract a float value from a PLY property.
-fn get_ply_float(
-    prop: Option<&ply_rs::ply::Property>,
-    name: &str,
-    path: &Path,
-) -> MeshResult<f64> {
+fn get_ply_float(prop: Option<&ply_rs::ply::Property>, name: &str, path: &Path) -> MeshResult<f64> {
     use ply_rs::ply::Property;
 
     match prop {
@@ -422,7 +406,7 @@ pub fn save_stl(mesh: &Mesh, path: &Path) -> MeshResult<()> {
 
     stl_io::write_stl(&mut writer, triangles.iter()).map_err(|e| MeshError::IoWrite {
         path: path.to_path_buf(),
-        source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+        source: std::io::Error::other(e.to_string()),
     })?;
 
     writer.flush().map_err(|e| MeshError::IoWrite {
@@ -430,11 +414,7 @@ pub fn save_stl(mesh: &Mesh, path: &Path) -> MeshResult<()> {
         source: e,
     })?;
 
-    info!(
-        "Saved {} triangles to {:?}",
-        mesh.face_count(),
-        path
-    );
+    info!("Saved {} triangles to {:?}", mesh.face_count(), path);
 
     Ok(())
 }
@@ -483,21 +463,26 @@ pub fn save_obj(mesh: &Mesh, path: &Path) -> MeshResult<()> {
     // Write vertices
     for (i, v) in mesh.vertices.iter().enumerate() {
         // Write position
-        writeln!(writer, "v {:.6} {:.6} {:.6}", v.position.x, v.position.y, v.position.z)
-            .map_err(|e| MeshError::IoWrite {
-                path: path.to_path_buf(),
-                source: e,
-            })?;
+        writeln!(
+            writer,
+            "v {:.6} {:.6} {:.6}",
+            v.position.x, v.position.y, v.position.z
+        )
+        .map_err(|e| MeshError::IoWrite {
+            path: path.to_path_buf(),
+            source: e,
+        })?;
 
         // Add debug comment with vertex attributes (tag, offset)
         if v.tag.is_some() || v.offset.is_some() {
             let tag_str = v.tag.map_or("none".to_string(), |z| format!("{}", z));
             let offset_str = v.offset.map_or("none".to_string(), |c| format!("{:.3}", c));
-            writeln!(writer, "# v{} tag={} offset={}", i, tag_str, offset_str)
-                .map_err(|e| MeshError::IoWrite {
+            writeln!(writer, "# v{} tag={} offset={}", i, tag_str, offset_str).map_err(|e| {
+                MeshError::IoWrite {
                     path: path.to_path_buf(),
                     source: e,
-                })?;
+                }
+            })?;
         }
     }
 
@@ -514,11 +499,12 @@ pub fn save_obj(mesh: &Mesh, path: &Path) -> MeshResult<()> {
 
         for v in &mesh.vertices {
             if let Some(n) = &v.normal {
-                writeln!(writer, "vn {:.6} {:.6} {:.6}", n.x, n.y, n.z)
-                    .map_err(|e| MeshError::IoWrite {
+                writeln!(writer, "vn {:.6} {:.6} {:.6}", n.x, n.y, n.z).map_err(|e| {
+                    MeshError::IoWrite {
                         path: path.to_path_buf(),
                         source: e,
-                    })?;
+                    }
+                })?;
             } else {
                 // Write zero normal as placeholder to maintain index correspondence
                 writeln!(writer, "vn 0 0 0").map_err(|e| MeshError::IoWrite {
@@ -547,11 +533,12 @@ pub fn save_obj(mesh: &Mesh, path: &Path) -> MeshResult<()> {
 
         if has_normals {
             // Format: f v1//n1 v2//n2 v3//n3 (no texture coords)
-            writeln!(writer, "f {}//{} {}//{} {}//{}", i0, i0, i1, i1, i2, i2)
-                .map_err(|e| MeshError::IoWrite {
+            writeln!(writer, "f {}//{} {}//{} {}//{}", i0, i0, i1, i1, i2, i2).map_err(|e| {
+                MeshError::IoWrite {
                     path: path.to_path_buf(),
                     source: e,
-                })?;
+                }
+            })?;
         } else {
             writeln!(writer, "f {} {} {}", i0, i1, i2).map_err(|e| MeshError::IoWrite {
                 path: path.to_path_buf(),
@@ -593,16 +580,20 @@ fn load_3mf(path: &Path) -> MeshResult<Mesh> {
     // Find the model file (usually 3D/3dmodel.model)
     let model_path = find_3mf_model_path(&mut archive)?;
 
-    let mut model_file = archive.by_name(&model_path).map_err(|e| MeshError::ParseError {
-        path: path.to_path_buf(),
-        details: format!("Cannot open model file '{}': {}", model_path, e),
-    })?;
+    let mut model_file = archive
+        .by_name(&model_path)
+        .map_err(|e| MeshError::ParseError {
+            path: path.to_path_buf(),
+            details: format!("Cannot open model file '{}': {}", model_path, e),
+        })?;
 
     let mut xml_content = String::new();
-    model_file.read_to_string(&mut xml_content).map_err(|e| MeshError::IoRead {
-        path: path.to_path_buf(),
-        source: e,
-    })?;
+    model_file
+        .read_to_string(&mut xml_content)
+        .map_err(|e| MeshError::IoRead {
+            path: path.to_path_buf(),
+            source: e,
+        })?;
 
     parse_3mf_model(&xml_content, path)
 }
@@ -636,8 +627,8 @@ fn find_3mf_model_path(archive: &mut zip::ZipArchive<File>) -> MeshResult<String
 
 /// Parse 3MF model XML content.
 fn parse_3mf_model(xml: &str, path: &Path) -> MeshResult<Mesh> {
-    use quick_xml::events::Event;
     use quick_xml::Reader;
+    use quick_xml::events::Event;
 
     let mut reader = Reader::from_str(xml);
     reader.config_mut().trim_text(true);
@@ -736,40 +727,46 @@ pub fn save_3mf(mesh: &Mesh, path: &Path) -> MeshResult<()> {
         .compression_method(zip::CompressionMethod::Deflated);
 
     // Write content types file (required by 3MF spec)
-    zip.start_file("[Content_Types].xml", options).map_err(|e| MeshError::IoWrite {
-        path: path.to_path_buf(),
-        source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
-    })?;
-    zip.write_all(CONTENT_TYPES_XML.as_bytes()).map_err(|e| MeshError::IoWrite {
-        path: path.to_path_buf(),
-        source: e,
-    })?;
+    zip.start_file("[Content_Types].xml", options)
+        .map_err(|e| MeshError::IoWrite {
+            path: path.to_path_buf(),
+            source: std::io::Error::other(e.to_string()),
+        })?;
+    zip.write_all(CONTENT_TYPES_XML.as_bytes())
+        .map_err(|e| MeshError::IoWrite {
+            path: path.to_path_buf(),
+            source: e,
+        })?;
 
     // Write relationships file
-    zip.start_file("_rels/.rels", options).map_err(|e| MeshError::IoWrite {
-        path: path.to_path_buf(),
-        source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
-    })?;
-    zip.write_all(RELS_XML.as_bytes()).map_err(|e| MeshError::IoWrite {
-        path: path.to_path_buf(),
-        source: e,
-    })?;
+    zip.start_file("_rels/.rels", options)
+        .map_err(|e| MeshError::IoWrite {
+            path: path.to_path_buf(),
+            source: std::io::Error::other(e.to_string()),
+        })?;
+    zip.write_all(RELS_XML.as_bytes())
+        .map_err(|e| MeshError::IoWrite {
+            path: path.to_path_buf(),
+            source: e,
+        })?;
 
     // Write the model file
-    zip.start_file("3D/3dmodel.model", options).map_err(|e| MeshError::IoWrite {
-        path: path.to_path_buf(),
-        source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
-    })?;
+    zip.start_file("3D/3dmodel.model", options)
+        .map_err(|e| MeshError::IoWrite {
+            path: path.to_path_buf(),
+            source: std::io::Error::other(e.to_string()),
+        })?;
 
     let model_xml = generate_3mf_model_xml(mesh);
-    zip.write_all(model_xml.as_bytes()).map_err(|e| MeshError::IoWrite {
-        path: path.to_path_buf(),
-        source: e,
-    })?;
+    zip.write_all(model_xml.as_bytes())
+        .map_err(|e| MeshError::IoWrite {
+            path: path.to_path_buf(),
+            source: e,
+        })?;
 
     zip.finish().map_err(|e| MeshError::IoWrite {
         path: path.to_path_buf(),
-        source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+        source: std::io::Error::other(e.to_string()),
     })?;
 
     info!(
@@ -787,13 +784,15 @@ fn generate_3mf_model_xml(mesh: &Mesh) -> String {
     let mut xml = String::with_capacity(mesh.vertices.len() * 50 + mesh.faces.len() * 40);
 
     // XML header and model element
-    xml.push_str(r#"<?xml version="1.0" encoding="UTF-8"?>
+    xml.push_str(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
 <model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
   <resources>
     <object id="1" type="model">
       <mesh>
         <vertices>
-"#);
+"#,
+    );
 
     // Write vertices
     for v in &mesh.vertices {
@@ -813,7 +812,8 @@ fn generate_3mf_model_xml(mesh: &Mesh) -> String {
         ));
     }
 
-    xml.push_str(r#"        </triangles>
+    xml.push_str(
+        r#"        </triangles>
       </mesh>
     </object>
   </resources>
@@ -821,7 +821,8 @@ fn generate_3mf_model_xml(mesh: &Mesh) -> String {
     <item objectid="1"/>
   </build>
 </model>
-"#);
+"#,
+    );
 
     xml
 }
@@ -1141,7 +1142,7 @@ impl ThreeMfExportParams {
 
     /// Check if beam lattice extension is enabled.
     pub fn has_beam_lattice(&self) -> bool {
-        self.beam_lattice.as_ref().map_or(false, |bl| !bl.is_empty())
+        self.beam_lattice.as_ref().is_some_and(|bl| !bl.is_empty())
     }
 
     /// Check if color group extension is enabled.
@@ -1209,7 +1210,7 @@ pub fn save_3mf_with_materials(
     zip.start_file("[Content_Types].xml", options)
         .map_err(|e| MeshError::IoWrite {
             path: path.to_path_buf(),
-            source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+            source: std::io::Error::other(e.to_string()),
         })?;
     zip.write_all(CONTENT_TYPES_XML.as_bytes())
         .map_err(|e| MeshError::IoWrite {
@@ -1221,7 +1222,7 @@ pub fn save_3mf_with_materials(
     zip.start_file("_rels/.rels", options)
         .map_err(|e| MeshError::IoWrite {
             path: path.to_path_buf(),
-            source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+            source: std::io::Error::other(e.to_string()),
         })?;
     zip.write_all(RELS_XML.as_bytes())
         .map_err(|e| MeshError::IoWrite {
@@ -1233,7 +1234,7 @@ pub fn save_3mf_with_materials(
     zip.start_file("3D/3dmodel.model", options)
         .map_err(|e| MeshError::IoWrite {
             path: path.to_path_buf(),
-            source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+            source: std::io::Error::other(e.to_string()),
         })?;
 
     let model_xml = generate_3mf_model_xml_with_materials(mesh, params);
@@ -1245,7 +1246,7 @@ pub fn save_3mf_with_materials(
 
     zip.finish().map_err(|e| MeshError::IoWrite {
         path: path.to_path_buf(),
-        source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+        source: std::io::Error::other(e.to_string()),
     })?;
 
     info!(
@@ -1288,18 +1289,22 @@ fn generate_3mf_model_xml_with_materials(mesh: &Mesh, params: &ThreeMfExportPara
         xml.push_str("    </basematerials>\n");
 
         // Write mesh object with material references
-        xml.push_str(r#"    <object id="2" type="model" pid="1" pindex="0">
+        xml.push_str(
+            r#"    <object id="2" type="model" pid="1" pindex="0">
       <mesh>
         <vertices>
-"#);
+"#,
+        );
     } else {
-        xml.push_str(r#"<?xml version="1.0" encoding="UTF-8"?>
+        xml.push_str(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
 <model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
   <resources>
     <object id="1" type="model">
       <mesh>
         <vertices>
-"#);
+"#,
+        );
     }
 
     // Write vertices
@@ -1341,7 +1346,8 @@ fn generate_3mf_model_xml_with_materials(mesh: &Mesh, params: &ThreeMfExportPara
     }
 
     if has_materials {
-        xml.push_str(r#"        </triangles>
+        xml.push_str(
+            r#"        </triangles>
       </mesh>
     </object>
   </resources>
@@ -1349,9 +1355,11 @@ fn generate_3mf_model_xml_with_materials(mesh: &Mesh, params: &ThreeMfExportPara
     <item objectid="2"/>
   </build>
 </model>
-"#);
+"#,
+        );
     } else {
-        xml.push_str(r#"        </triangles>
+        xml.push_str(
+            r#"        </triangles>
       </mesh>
     </object>
   </resources>
@@ -1359,7 +1367,8 @@ fn generate_3mf_model_xml_with_materials(mesh: &Mesh, params: &ThreeMfExportPara
     <item objectid="1"/>
   </build>
 </model>
-"#);
+"#,
+        );
     }
 
     xml
@@ -1383,9 +1392,7 @@ fn build_face_material_map(
         } else if !zone.region.vertices.is_empty() {
             // Otherwise, find faces that have ALL vertices in this region
             for (face_idx, face) in mesh.faces.iter().enumerate() {
-                let all_in_region = face
-                    .iter()
-                    .all(|&v| zone.region.vertices.contains(&v));
+                let all_in_region = face.iter().all(|&v| zone.region.vertices.contains(&v));
                 if all_in_region {
                     face_materials.insert(face_idx as u32, mat_idx);
                 }
@@ -1413,7 +1420,8 @@ fn escape_xml(s: &str) -> String {
 mod threemf_namespaces {
     pub const CORE: &str = "http://schemas.microsoft.com/3dmanufacturing/core/2015/02";
     pub const MATERIALS: &str = "http://schemas.microsoft.com/3dmanufacturing/material/2015/02";
-    pub const BEAMLATTICE: &str = "http://schemas.microsoft.com/3dmanufacturing/beamlattice/2017/02";
+    pub const BEAMLATTICE: &str =
+        "http://schemas.microsoft.com/3dmanufacturing/beamlattice/2017/02";
     pub const PRODUCTION: &str = "http://schemas.microsoft.com/3dmanufacturing/production/2015/06";
 }
 
@@ -1467,7 +1475,7 @@ pub fn save_3mf_extended(mesh: &Mesh, path: &Path, params: &ThreeMfExportParams)
     zip.start_file("[Content_Types].xml", options)
         .map_err(|e| MeshError::IoWrite {
             path: path.to_path_buf(),
-            source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+            source: std::io::Error::other(e.to_string()),
         })?;
     zip.write_all(CONTENT_TYPES_XML.as_bytes())
         .map_err(|e| MeshError::IoWrite {
@@ -1479,7 +1487,7 @@ pub fn save_3mf_extended(mesh: &Mesh, path: &Path, params: &ThreeMfExportParams)
     zip.start_file("_rels/.rels", options)
         .map_err(|e| MeshError::IoWrite {
             path: path.to_path_buf(),
-            source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+            source: std::io::Error::other(e.to_string()),
         })?;
     zip.write_all(RELS_XML.as_bytes())
         .map_err(|e| MeshError::IoWrite {
@@ -1491,7 +1499,7 @@ pub fn save_3mf_extended(mesh: &Mesh, path: &Path, params: &ThreeMfExportParams)
     zip.start_file("3D/3dmodel.model", options)
         .map_err(|e| MeshError::IoWrite {
             path: path.to_path_buf(),
-            source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+            source: std::io::Error::other(e.to_string()),
         })?;
 
     let model_xml = generate_3mf_extended_xml(mesh, params);
@@ -1503,7 +1511,7 @@ pub fn save_3mf_extended(mesh: &Mesh, path: &Path, params: &ThreeMfExportParams)
 
     zip.finish().map_err(|e| MeshError::IoWrite {
         path: path.to_path_buf(),
-        source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+        source: std::io::Error::other(e.to_string()),
     })?;
 
     info!(
@@ -1527,28 +1535,22 @@ fn generate_3mf_extended_xml(mesh: &Mesh, params: &ThreeMfExportParams) -> Strin
     let mut xml = String::with_capacity(
         mesh.vertices.len() * 50
             + mesh.faces.len() * 50
-            + params.beam_lattice.as_ref().map_or(0, |bl| bl.beams.len() * 80),
+            + params
+                .beam_lattice
+                .as_ref()
+                .map_or(0, |bl| bl.beams.len() * 80),
     );
 
     // Build namespace declarations
     let mut namespaces = format!("xmlns=\"{}\"", threemf_namespaces::CORE);
     if has_materials || has_color_groups {
-        namespaces.push_str(&format!(
-            " xmlns:m=\"{}\"",
-            threemf_namespaces::MATERIALS
-        ));
+        namespaces.push_str(&format!(" xmlns:m=\"{}\"", threemf_namespaces::MATERIALS));
     }
     if has_beam_lattice {
-        namespaces.push_str(&format!(
-            " xmlns:b=\"{}\"",
-            threemf_namespaces::BEAMLATTICE
-        ));
+        namespaces.push_str(&format!(" xmlns:b=\"{}\"", threemf_namespaces::BEAMLATTICE));
     }
     if has_production {
-        namespaces.push_str(&format!(
-            " xmlns:p=\"{}\"",
-            threemf_namespaces::PRODUCTION
-        ));
+        namespaces.push_str(&format!(" xmlns:p=\"{}\"", threemf_namespaces::PRODUCTION));
     }
 
     // XML header and model element
@@ -1578,7 +1580,9 @@ fn generate_3mf_extended_xml(mesh: &Mesh, params: &ThreeMfExportParams) -> Strin
             xml.push_str(&format!(
                 "      <base name=\"{}\" displaycolor=\"#{:02X}{:02X}{:02X}\"/>\n",
                 escape_xml(&zone.material_name),
-                r, g, b
+                r,
+                g,
+                b
             ));
         }
         xml.push_str("    </basematerials>\n");
@@ -1813,8 +1817,8 @@ fn generate_beamlattice_xml(beam_lattice: &BeamLatticeData) -> String {
 /// A `ThreeMfLoadResult` containing the mesh, material zones, and per-triangle
 /// material assignments.
 pub fn load_3mf_with_materials(path: &Path) -> MeshResult<ThreeMfLoadResult> {
-    use quick_xml::events::Event;
     use quick_xml::Reader;
+    use quick_xml::events::Event;
 
     info!("Loading 3MF with materials from {:?}", path);
 
@@ -1831,12 +1835,13 @@ pub fn load_3mf_with_materials(path: &Path) -> MeshResult<ThreeMfLoadResult> {
     // Find and read the 3D model file into a string
     let mut model_content = String::new();
     {
-        let mut model_file = archive.by_name("3D/3dmodel.model").map_err(|_| {
-            MeshError::ParseError {
-                path: path.to_path_buf(),
-                details: "3MF archive missing 3D/3dmodel.model".to_string(),
-            }
-        })?;
+        let mut model_file =
+            archive
+                .by_name("3D/3dmodel.model")
+                .map_err(|_| MeshError::ParseError {
+                    path: path.to_path_buf(),
+                    details: "3MF archive missing 3D/3dmodel.model".to_string(),
+                })?;
         model_file
             .read_to_string(&mut model_content)
             .map_err(|e| MeshError::IoRead {
@@ -1851,6 +1856,7 @@ pub fn load_3mf_with_materials(path: &Path) -> MeshResult<ThreeMfLoadResult> {
     let mut mesh = Mesh::new();
 
     // Material parsing state
+    #[allow(clippy::type_complexity)]
     let mut base_materials: Vec<(String, Option<(u8, u8, u8)>)> = Vec::new(); // (name, color)
     let mut in_basematerials = false;
     let mut basematerials_id: Option<String> = None;
@@ -2053,18 +2059,45 @@ pub fn save_ply_binary(mesh: &Mesh, path: &Path) -> MeshResult<()> {
 
     // Define vertex element
     let mut vertex_def = ElementDef::new("vertex".to_string());
-    vertex_def.properties.add(PropertyDef::new("x".to_string(), PropertyType::Scalar(ScalarType::Float)));
-    vertex_def.properties.add(PropertyDef::new("y".to_string(), PropertyType::Scalar(ScalarType::Float)));
-    vertex_def.properties.add(PropertyDef::new("z".to_string(), PropertyType::Scalar(ScalarType::Float)));
+    vertex_def.properties.add(PropertyDef::new(
+        "x".to_string(),
+        PropertyType::Scalar(ScalarType::Float),
+    ));
+    vertex_def.properties.add(PropertyDef::new(
+        "y".to_string(),
+        PropertyType::Scalar(ScalarType::Float),
+    ));
+    vertex_def.properties.add(PropertyDef::new(
+        "z".to_string(),
+        PropertyType::Scalar(ScalarType::Float),
+    ));
     if has_normals {
-        vertex_def.properties.add(PropertyDef::new("nx".to_string(), PropertyType::Scalar(ScalarType::Float)));
-        vertex_def.properties.add(PropertyDef::new("ny".to_string(), PropertyType::Scalar(ScalarType::Float)));
-        vertex_def.properties.add(PropertyDef::new("nz".to_string(), PropertyType::Scalar(ScalarType::Float)));
+        vertex_def.properties.add(PropertyDef::new(
+            "nx".to_string(),
+            PropertyType::Scalar(ScalarType::Float),
+        ));
+        vertex_def.properties.add(PropertyDef::new(
+            "ny".to_string(),
+            PropertyType::Scalar(ScalarType::Float),
+        ));
+        vertex_def.properties.add(PropertyDef::new(
+            "nz".to_string(),
+            PropertyType::Scalar(ScalarType::Float),
+        ));
     }
     if has_colors {
-        vertex_def.properties.add(PropertyDef::new("red".to_string(), PropertyType::Scalar(ScalarType::UChar)));
-        vertex_def.properties.add(PropertyDef::new("green".to_string(), PropertyType::Scalar(ScalarType::UChar)));
-        vertex_def.properties.add(PropertyDef::new("blue".to_string(), PropertyType::Scalar(ScalarType::UChar)));
+        vertex_def.properties.add(PropertyDef::new(
+            "red".to_string(),
+            PropertyType::Scalar(ScalarType::UChar),
+        ));
+        vertex_def.properties.add(PropertyDef::new(
+            "green".to_string(),
+            PropertyType::Scalar(ScalarType::UChar),
+        ));
+        vertex_def.properties.add(PropertyDef::new(
+            "blue".to_string(),
+            PropertyType::Scalar(ScalarType::UChar),
+        ));
     }
     vertex_def.count = mesh.vertices.len();
     ply.header.elements.add(vertex_def);
@@ -2116,7 +2149,7 @@ pub fn save_ply_binary(mesh: &Mesh, path: &Path) -> MeshResult<()> {
     // Ensure header counts match payload (required for ply-rs)
     ply.make_consistent().map_err(|e| MeshError::IoWrite {
         path: path.to_path_buf(),
-        source: std::io::Error::new(std::io::ErrorKind::Other, format!("PLY consistency error: {:?}", e)),
+        source: std::io::Error::other(format!("PLY consistency error: {:?}", e)),
     })?;
 
     // Write to file
@@ -2127,10 +2160,12 @@ pub fn save_ply_binary(mesh: &Mesh, path: &Path) -> MeshResult<()> {
     let mut writer = BufWriter::new(file);
 
     let ply_writer = Writer::new();
-    ply_writer.write_ply(&mut writer, &mut ply).map_err(|e| MeshError::IoWrite {
-        path: path.to_path_buf(),
-        source: std::io::Error::new(std::io::ErrorKind::Other, format!("PLY write error: {:?}", e)),
-    })?;
+    ply_writer
+        .write_ply(&mut writer, &mut ply)
+        .map_err(|e| MeshError::IoWrite {
+            path: path.to_path_buf(),
+            source: std::io::Error::other(format!("PLY write error: {:?}", e)),
+        })?;
 
     writer.flush().map_err(|e| MeshError::IoWrite {
         path: path.to_path_buf(),
@@ -2171,18 +2206,45 @@ pub fn save_ply_ascii(mesh: &Mesh, path: &Path) -> MeshResult<()> {
 
     // Define vertex element
     let mut vertex_def = ElementDef::new("vertex".to_string());
-    vertex_def.properties.add(PropertyDef::new("x".to_string(), PropertyType::Scalar(ScalarType::Float)));
-    vertex_def.properties.add(PropertyDef::new("y".to_string(), PropertyType::Scalar(ScalarType::Float)));
-    vertex_def.properties.add(PropertyDef::new("z".to_string(), PropertyType::Scalar(ScalarType::Float)));
+    vertex_def.properties.add(PropertyDef::new(
+        "x".to_string(),
+        PropertyType::Scalar(ScalarType::Float),
+    ));
+    vertex_def.properties.add(PropertyDef::new(
+        "y".to_string(),
+        PropertyType::Scalar(ScalarType::Float),
+    ));
+    vertex_def.properties.add(PropertyDef::new(
+        "z".to_string(),
+        PropertyType::Scalar(ScalarType::Float),
+    ));
     if has_normals {
-        vertex_def.properties.add(PropertyDef::new("nx".to_string(), PropertyType::Scalar(ScalarType::Float)));
-        vertex_def.properties.add(PropertyDef::new("ny".to_string(), PropertyType::Scalar(ScalarType::Float)));
-        vertex_def.properties.add(PropertyDef::new("nz".to_string(), PropertyType::Scalar(ScalarType::Float)));
+        vertex_def.properties.add(PropertyDef::new(
+            "nx".to_string(),
+            PropertyType::Scalar(ScalarType::Float),
+        ));
+        vertex_def.properties.add(PropertyDef::new(
+            "ny".to_string(),
+            PropertyType::Scalar(ScalarType::Float),
+        ));
+        vertex_def.properties.add(PropertyDef::new(
+            "nz".to_string(),
+            PropertyType::Scalar(ScalarType::Float),
+        ));
     }
     if has_colors {
-        vertex_def.properties.add(PropertyDef::new("red".to_string(), PropertyType::Scalar(ScalarType::UChar)));
-        vertex_def.properties.add(PropertyDef::new("green".to_string(), PropertyType::Scalar(ScalarType::UChar)));
-        vertex_def.properties.add(PropertyDef::new("blue".to_string(), PropertyType::Scalar(ScalarType::UChar)));
+        vertex_def.properties.add(PropertyDef::new(
+            "red".to_string(),
+            PropertyType::Scalar(ScalarType::UChar),
+        ));
+        vertex_def.properties.add(PropertyDef::new(
+            "green".to_string(),
+            PropertyType::Scalar(ScalarType::UChar),
+        ));
+        vertex_def.properties.add(PropertyDef::new(
+            "blue".to_string(),
+            PropertyType::Scalar(ScalarType::UChar),
+        ));
     }
     vertex_def.count = mesh.vertices.len();
     ply.header.elements.add(vertex_def);
@@ -2234,7 +2296,7 @@ pub fn save_ply_ascii(mesh: &Mesh, path: &Path) -> MeshResult<()> {
     // Ensure header counts match payload (required for ply-rs)
     ply.make_consistent().map_err(|e| MeshError::IoWrite {
         path: path.to_path_buf(),
-        source: std::io::Error::new(std::io::ErrorKind::Other, format!("PLY consistency error: {:?}", e)),
+        source: std::io::Error::other(format!("PLY consistency error: {:?}", e)),
     })?;
 
     // Write to file
@@ -2245,10 +2307,12 @@ pub fn save_ply_ascii(mesh: &Mesh, path: &Path) -> MeshResult<()> {
     let mut writer = BufWriter::new(file);
 
     let ply_writer = Writer::new();
-    ply_writer.write_ply(&mut writer, &mut ply).map_err(|e| MeshError::IoWrite {
-        path: path.to_path_buf(),
-        source: std::io::Error::new(std::io::ErrorKind::Other, format!("PLY write error: {:?}", e)),
-    })?;
+    ply_writer
+        .write_ply(&mut writer, &mut ply)
+        .map_err(|e| MeshError::IoWrite {
+            path: path.to_path_buf(),
+            source: std::io::Error::other(format!("PLY write error: {:?}", e)),
+        })?;
 
     writer.flush().map_err(|e| MeshError::IoWrite {
         path: path.to_path_buf(),
@@ -2398,7 +2462,12 @@ mod tests {
         assert_eq!(reloaded.face_count(), 4);
 
         // Verify vertex positions are preserved exactly
-        for (i, (orig, loaded)) in mesh.vertices.iter().zip(reloaded.vertices.iter()).enumerate() {
+        for (i, (orig, loaded)) in mesh
+            .vertices
+            .iter()
+            .zip(reloaded.vertices.iter())
+            .enumerate()
+        {
             let pos_diff = (orig.position - loaded.position).norm();
             assert!(
                 pos_diff < 1e-5,
@@ -2532,7 +2601,12 @@ mod tests {
         assert_eq!(reloaded.face_count(), 4);
 
         // Verify vertex positions are preserved
-        for (i, (orig, loaded)) in mesh.vertices.iter().zip(reloaded.vertices.iter()).enumerate() {
+        for (i, (orig, loaded)) in mesh
+            .vertices
+            .iter()
+            .zip(reloaded.vertices.iter())
+            .enumerate()
+        {
             let pos_diff = (orig.position - loaded.position).norm();
             assert!(
                 pos_diff < 1e-5,
@@ -2573,7 +2647,12 @@ mod tests {
         assert_eq!(reloaded.face_count(), 4);
 
         // Verify vertex positions are preserved
-        for (i, (orig, loaded)) in mesh.vertices.iter().zip(reloaded.vertices.iter()).enumerate() {
+        for (i, (orig, loaded)) in mesh
+            .vertices
+            .iter()
+            .zip(reloaded.vertices.iter())
+            .enumerate()
+        {
             let pos_diff = (orig.position - loaded.position).norm();
             assert!(
                 pos_diff < 1e-5,
@@ -2617,7 +2696,12 @@ mod tests {
         assert_eq!(reloaded.face_count(), 1);
 
         // Verify normals are preserved
-        for (i, (orig, loaded)) in mesh.vertices.iter().zip(reloaded.vertices.iter()).enumerate() {
+        for (i, (orig, loaded)) in mesh
+            .vertices
+            .iter()
+            .zip(reloaded.vertices.iter())
+            .enumerate()
+        {
             let orig_n = orig.normal.expect("original should have normal");
             let loaded_n = loaded.normal.expect("loaded should have normal");
             let diff = (orig_n - loaded_n).norm();
@@ -2761,7 +2845,12 @@ mod tests {
         let reloaded = load_mesh(file.path()).expect("should reload PLY with colors and normals");
 
         // Verify both colors and normals are preserved
-        for (i, (orig, loaded)) in mesh.vertices.iter().zip(reloaded.vertices.iter()).enumerate() {
+        for (i, (orig, loaded)) in mesh
+            .vertices
+            .iter()
+            .zip(reloaded.vertices.iter())
+            .enumerate()
+        {
             // Check color
             let orig_c = orig.color.expect("original should have color");
             let loaded_c = loaded.color.expect("loaded should have color");
@@ -2835,26 +2924,40 @@ mod tests {
 
         // Save to temp file
         let file = NamedTempFile::with_suffix(".3mf").unwrap();
-        save_3mf_with_materials(&mesh, file.path(), &params).expect("should save 3MF with materials");
+        save_3mf_with_materials(&mesh, file.path(), &params)
+            .expect("should save 3MF with materials");
 
         // Reload
-        let result = load_3mf_with_materials(file.path()).expect("should reload 3MF with materials");
+        let result =
+            load_3mf_with_materials(file.path()).expect("should reload 3MF with materials");
 
         // Verify mesh geometry
         assert_eq!(result.mesh.vertex_count(), 8, "vertex count should match");
         assert_eq!(result.mesh.face_count(), 12, "face count should match");
 
         // Verify materials
-        assert_eq!(result.material_zones.len(), 3, "should have 3 material zones");
+        assert_eq!(
+            result.material_zones.len(),
+            3,
+            "should have 3 material zones"
+        );
 
         // Check material names and colors
-        let names: Vec<&str> = result.material_zones.iter().map(|z| z.material_name.as_str()).collect();
+        let names: Vec<&str> = result
+            .material_zones
+            .iter()
+            .map(|z| z.material_name.as_str())
+            .collect();
         assert!(names.contains(&"Base-Material"));
         assert!(names.contains(&"Top-Material"));
         assert!(names.contains(&"Side-Material"));
 
         // Verify triangle material assignments
-        assert_eq!(result.triangle_materials.len(), 12, "should have 12 triangle materials");
+        assert_eq!(
+            result.triangle_materials.len(),
+            12,
+            "should have 12 triangle materials"
+        );
 
         // Bottom faces should be material 0 (Base-Material)
         assert_eq!(result.triangle_materials[0], Some(0));
@@ -2866,7 +2969,12 @@ mod tests {
 
         // Side faces should be material 2 (Side-Material)
         for i in 4..12 {
-            assert_eq!(result.triangle_materials[i], Some(2), "face {} should have Side-Material", i);
+            assert_eq!(
+                result.triangle_materials[i],
+                Some(2),
+                "face {} should have Side-Material",
+                i
+            );
         }
     }
 
@@ -2883,8 +2991,7 @@ mod tests {
 
         // Create material with specific color
         let region = MeshRegion::from_faces("colored", vec![0]);
-        let zone = MaterialZone::new(region, "Orange-TPU")
-            .with_color(255, 128, 0);
+        let zone = MaterialZone::new(region, "Orange-TPU").with_color(255, 128, 0);
 
         let params = ThreeMfExportParams::with_materials(vec![zone]);
 
@@ -2920,7 +3027,8 @@ mod tests {
         assert_eq!(basic_mesh.vertex_count(), 3);
         assert_eq!(basic_mesh.face_count(), 1);
 
-        let result = load_3mf_with_materials(file.path()).expect("should load with materials function");
+        let result =
+            load_3mf_with_materials(file.path()).expect("should load with materials function");
         assert_eq!(result.mesh.vertex_count(), 3);
         assert_eq!(result.mesh.face_count(), 1);
         assert!(result.material_zones.is_empty(), "should have no materials");
@@ -2951,7 +3059,7 @@ mod tests {
 
         // Create a mesh with 2 triangles sharing vertices
         let mut mesh = Mesh::new();
-        mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 0.0));  // 0
+        mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 0.0)); // 0
         mesh.vertices.push(Vertex::from_coords(10.0, 0.0, 0.0)); // 1
         mesh.vertices.push(Vertex::from_coords(5.0, 10.0, 0.0)); // 2
         mesh.vertices.push(Vertex::from_coords(10.0, 10.0, 0.0)); // 3
@@ -2962,8 +3070,7 @@ mod tests {
         // Create a region using vertices (not faces)
         // Only face 0 has ALL its vertices in the region
         let region = MeshRegion::from_vertices("left-triangle", vec![0, 1, 2]);
-        let zone = MaterialZone::new(region, "Left-Material")
-            .with_color(255, 0, 0);
+        let zone = MaterialZone::new(region, "Left-Material").with_color(255, 0, 0);
 
         let params = ThreeMfExportParams::with_materials(vec![zone]);
 
@@ -3004,8 +3111,7 @@ mod tests {
         beam_lattice.add_beam_default(v2, v4);
         beam_lattice.add_beam_default(v3, v4);
 
-        let params = ThreeMfExportParams::default()
-            .with_beam_lattice(beam_lattice);
+        let params = ThreeMfExportParams::default().with_beam_lattice(beam_lattice);
 
         // Save the 3MF
         let file = NamedTempFile::with_suffix(".3mf").unwrap();
@@ -3024,14 +3130,30 @@ mod tests {
             .expect("should read model");
 
         // Verify beam lattice namespace is present
-        assert!(model_content.contains("xmlns:b="), "should have beam lattice namespace");
-        assert!(model_content.contains("beamlattice"), "should have beamlattice element");
-        assert!(model_content.contains("<b:beam"), "should have beam elements");
-        assert!(model_content.contains("<b:vertex"), "should have vertex elements");
+        assert!(
+            model_content.contains("xmlns:b="),
+            "should have beam lattice namespace"
+        );
+        assert!(
+            model_content.contains("beamlattice"),
+            "should have beamlattice element"
+        );
+        assert!(
+            model_content.contains("<b:beam"),
+            "should have beam elements"
+        );
+        assert!(
+            model_content.contains("<b:vertex"),
+            "should have vertex elements"
+        );
 
         // Verify beam count - we added 6 beams
         let beam_count = model_content.matches("<b:beam").count();
-        assert!(beam_count >= 6, "should have at least 6 beams, found {}", beam_count);
+        assert!(
+            beam_count >= 6,
+            "should have at least 6 beams, found {}",
+            beam_count
+        );
     }
 
     #[test]
@@ -3051,16 +3173,18 @@ mod tests {
         let green = color_group.add_rgb(0, 255, 0);
         let blue = color_group.add_rgb(0, 0, 255);
 
-        let mut params = ThreeMfExportParams::default()
-            .add_color_group(color_group);
+        let mut params = ThreeMfExportParams::default().add_color_group(color_group);
 
         // Assign colors to first triangle
-        params.triangle_colors.insert(0, TriangleColors {
-            color_group_id: 2,
-            p1: red,
-            p2: green,
-            p3: blue,
-        });
+        params.triangle_colors.insert(
+            0,
+            TriangleColors {
+                color_group_id: 2,
+                p1: red,
+                p2: green,
+                p3: blue,
+            },
+        );
 
         // Save the 3MF
         let file = NamedTempFile::with_suffix(".3mf").unwrap();
@@ -3078,15 +3202,33 @@ mod tests {
             .expect("should read model");
 
         // Verify color group elements
-        assert!(model_content.contains("xmlns:m="), "should have materials namespace");
-        assert!(model_content.contains("<m:colorgroup"), "should have colorgroup element");
-        assert!(model_content.contains("<m:color"), "should have color elements");
+        assert!(
+            model_content.contains("xmlns:m="),
+            "should have materials namespace"
+        );
+        assert!(
+            model_content.contains("<m:colorgroup"),
+            "should have colorgroup element"
+        );
+        assert!(
+            model_content.contains("<m:color"),
+            "should have color elements"
+        );
         assert!(model_content.contains("#FF0000FF"), "should have red color");
-        assert!(model_content.contains("#00FF00FF"), "should have green color");
-        assert!(model_content.contains("#0000FFFF"), "should have blue color");
+        assert!(
+            model_content.contains("#00FF00FF"),
+            "should have green color"
+        );
+        assert!(
+            model_content.contains("#0000FFFF"),
+            "should have blue color"
+        );
 
         // Verify per-vertex color assignment on first triangle
-        assert!(model_content.contains("p1=\"0\" p2=\"1\" p3=\"2\""), "should have per-vertex color indices");
+        assert!(
+            model_content.contains("p1=\"0\" p2=\"1\" p3=\"2\""),
+            "should have per-vertex color indices"
+        );
     }
 
     #[test]
@@ -3099,8 +3241,7 @@ mod tests {
         mesh.vertices.push(Vertex::from_coords(5.0, 10.0, 0.0));
         mesh.faces.push([0, 1, 2]);
 
-        let params = ThreeMfExportParams::default()
-            .with_uuids(true);
+        let params = ThreeMfExportParams::default().with_uuids(true);
 
         // Save the 3MF
         let file = NamedTempFile::with_suffix(".3mf").unwrap();
@@ -3118,27 +3259,33 @@ mod tests {
             .expect("should read model");
 
         // Verify production namespace and UUID attributes
-        assert!(model_content.contains("xmlns:p="), "should have production namespace");
-        assert!(model_content.contains("p:UUID="), "should have UUID attributes");
+        assert!(
+            model_content.contains("xmlns:p="),
+            "should have production namespace"
+        );
+        assert!(
+            model_content.contains("p:UUID="),
+            "should have UUID attributes"
+        );
 
         // Count UUID occurrences - should have at least 3 (build, object, item)
         let uuid_count = model_content.matches("p:UUID=").count();
-        assert!(uuid_count >= 3, "should have at least 3 UUIDs, found {}", uuid_count);
+        assert!(
+            uuid_count >= 3,
+            "should have at least 3 UUIDs, found {}",
+            uuid_count
+        );
     }
 
     #[test]
     fn test_beam_lattice_from_cubic_generation() {
-        use crate::lattice::{generate_lattice, LatticeParams};
+        use crate::lattice::{LatticeParams, generate_lattice};
         use nalgebra::Point3;
 
         // Generate a small cubic lattice with beam data preservation
-        let params = LatticeParams::cubic(5.0)
-            .with_beam_export(true);
+        let params = LatticeParams::cubic(5.0).with_beam_export(true);
 
-        let bounds = (
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(10.0, 10.0, 10.0),
-        );
+        let bounds = (Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 10.0, 10.0));
 
         let result = generate_lattice(&params, bounds);
 
@@ -3152,8 +3299,14 @@ mod tests {
         // For a 2x2x2 cell cubic lattice, we should have:
         // - 3x3x3 = 27 vertices (corners)
         // - 3 struts per direction per layer = significant number of beams
-        assert!(beam_data.vertices.len() >= 8, "should have at least corner vertices");
-        assert!(beam_data.beams.len() >= 12, "should have at least edge beams");
+        assert!(
+            beam_data.vertices.len() >= 8,
+            "should have at least corner vertices"
+        );
+        assert!(
+            beam_data.beams.len() >= 12,
+            "should have at least edge beams"
+        );
 
         // Export to 3MF with beam lattice
         let mut mesh = Mesh::new();
@@ -3162,8 +3315,7 @@ mod tests {
         mesh.vertices.push(Vertex::from_coords(5.0, 10.0, 0.0));
         mesh.faces.push([0, 1, 2]);
 
-        let export_params = ThreeMfExportParams::default()
-            .with_beam_lattice(beam_data);
+        let export_params = ThreeMfExportParams::default().with_beam_lattice(beam_data);
 
         let file = NamedTempFile::with_suffix(".3mf").unwrap();
         save_3mf_extended(&mesh, file.path(), &export_params)

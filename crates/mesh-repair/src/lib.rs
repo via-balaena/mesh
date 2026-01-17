@@ -321,7 +321,7 @@ pub mod step;
 
 // Re-export STEP types when feature is enabled
 #[cfg(feature = "step")]
-pub use step::{export_step, export_step_to_string, StepExportParams, StepExportResult};
+pub use step::{StepExportParams, StepExportResult, export_step, export_step_to_string};
 
 // Re-export core types at crate root
 pub use error::{
@@ -334,21 +334,34 @@ pub use adjacency::MeshAdjacency;
 
 // Re-export commonly used functions
 pub use io::{
-    load_mesh, save_mesh, save_stl, save_obj, save_3mf, save_ply, save_ply_ascii, MeshFormat,
-    // 3MF with materials support
-    save_3mf_with_materials, load_3mf_with_materials, ThreeMfExportParams, ThreeMfLoadResult,
+    // 3MF Beam Lattice Extension types
+    Beam,
+    BeamCap,
+    BeamLatticeData,
+    BeamSet,
+    // 3MF Color Group types
+    ColorGroup,
+    MeshFormat,
+    ThreeMfExportParams,
+    ThreeMfLoadResult,
+    TriangleColors,
+    load_3mf_with_materials,
+    load_mesh,
+    save_3mf,
     // 3MF extended export with all extensions
     save_3mf_extended,
-    // 3MF Beam Lattice Extension types
-    Beam, BeamCap, BeamLatticeData, BeamSet,
-    // 3MF Color Group types
-    ColorGroup, TriangleColors,
+    // 3MF with materials support
+    save_3mf_with_materials,
+    save_mesh,
+    save_obj,
+    save_ply,
+    save_ply_ascii,
+    save_stl,
 };
 pub use repair::{
-    compute_vertex_normals, fix_inverted_faces, remove_duplicate_faces, fix_non_manifold_edges,
-    repair_mesh, repair_mesh_with_config, RepairParams,
-    remove_degenerate_triangles, remove_degenerate_triangles_enhanced,
-    weld_vertices, remove_unreferenced_vertices,
+    RepairParams, compute_vertex_normals, fix_inverted_faces, fix_non_manifold_edges,
+    remove_degenerate_triangles, remove_degenerate_triangles_enhanced, remove_duplicate_faces,
+    remove_unreferenced_vertices, repair_mesh, repair_mesh_with_config, weld_vertices,
 };
 
 // Builder API
@@ -357,35 +370,33 @@ pub use fitting::{FittingBuilder, FittingResult};
 pub use pipeline::{IntoPipeline, Pipeline, PipelineResult};
 
 // Pipeline serialization (requires pipeline-config feature)
+pub use components::{
+    ComponentAnalysis, find_connected_components, keep_largest_component, remove_small_components,
+    split_into_components,
+};
+pub use decimate::{DecimateParams, DecimateResult, decimate_mesh, decimate_mesh_with_progress};
+pub use holes::{BoundaryLoop, detect_holes, fill_holes, fill_holes_with_max_edges};
+pub use intersect::{IntersectionParams, SelfIntersectionResult, detect_self_intersections};
 #[cfg(feature = "pipeline-config")]
 pub use pipeline::{PipelineConfig, PipelineConfigError, PipelineStep};
-pub use validate::{
-    validate_mesh, validate_mesh_data, validate_mesh_data_strict,
-    MeshReport, DataValidationResult, ValidationOptions,
-};
-pub use holes::{fill_holes, fill_holes_with_max_edges, detect_holes, BoundaryLoop};
-pub use winding::fix_winding_order;
-pub use components::{
-    find_connected_components, split_into_components, keep_largest_component,
-    remove_small_components, ComponentAnalysis,
-};
-pub use intersect::{
-    detect_self_intersections, IntersectionParams, SelfIntersectionResult,
-};
-pub use decimate::{decimate_mesh, decimate_mesh_with_progress, DecimateParams, DecimateResult};
-pub use subdivide::{subdivide_mesh, SubdivideParams, SubdivideResult};
 pub use remesh::{
+    CurvatureResult, FeatureEdge, FeatureEdgeResult, RemeshParams, RemeshResult, VertexCurvature,
     compute_curvature, detect_feature_edges, remesh_adaptive, remesh_anisotropic, remesh_isotropic,
-    remesh_isotropic_with_progress, CurvatureResult, FeatureEdge, FeatureEdgeResult, RemeshParams,
-    RemeshResult, VertexCurvature,
+    remesh_isotropic_with_progress,
 };
-pub use thickness::{analyze_thickness, ThicknessParams, ThicknessResult, ThinRegion};
+pub use subdivide::{SubdivideParams, SubdivideResult, subdivide_mesh};
+pub use thickness::{ThicknessParams, ThicknessResult, ThinRegion, analyze_thickness};
+pub use validate::{
+    DataValidationResult, MeshReport, ValidationOptions, validate_mesh, validate_mesh_data,
+    validate_mesh_data_strict,
+};
+pub use winding::fix_winding_order;
 
 // Re-export morphing and registration types
-pub use morph::{morph_mesh, Constraint, MorphAlgorithm, MorphParams, MorphResult, RbfKernel};
+pub use morph::{Constraint, MorphAlgorithm, MorphParams, MorphResult, RbfKernel, morph_mesh};
 pub use registration::{
-    align_meshes, non_rigid_align, Landmark, NonRigidParams, NonRigidRegistrationResult,
-    RegistrationAlgorithm, RegistrationParams, RegistrationResult, RigidTransform,
+    Landmark, NonRigidParams, NonRigidRegistrationResult, RegistrationAlgorithm,
+    RegistrationParams, RegistrationResult, RigidTransform, align_meshes, non_rigid_align,
 };
 pub use template::{
     ControlRegion, FitParams, FitResult, FitStage, FitTemplate, Measurement, MeasurementType,
@@ -406,50 +417,50 @@ pub use assembly::{
 
 // Re-export lattice types for infill generation
 pub use lattice::{
-    generate_infill, generate_lattice, DensityMap, InfillParams, InfillResult,
-    LatticeParams, LatticeResult, LatticeType,
+    DensityMap, InfillParams, InfillResult, LatticeParams, LatticeResult, LatticeType,
+    generate_infill, generate_lattice,
 };
 
 // Re-export boolean types for CSG operations
 pub use boolean::{
-    boolean_operation, boolean_operation_with_progress, BooleanOp, BooleanParams, BooleanResult,
-    BooleanStats, CoplanarStrategy,
+    BooleanOp, BooleanParams, BooleanResult, BooleanStats, CoplanarStrategy, boolean_operation,
+    boolean_operation_with_progress,
 };
 
 // Re-export scan processing types
 pub use scan::{
-    cleanup_scan, denoise_mesh, fill_holes_advanced, remove_outliers, DenoiseMethod,
-    DenoiseParams, DenoiseResult, HoleFillParams, HoleFillResult, HoleFillStrategy,
-    OutlierRemovalParams, ScanCleanupParams, ScanCleanupResult,
+    DenoiseMethod, DenoiseParams, DenoiseResult, HoleFillParams, HoleFillResult, HoleFillStrategy,
+    OutlierRemovalParams, ScanCleanupParams, ScanCleanupResult, cleanup_scan, denoise_mesh,
+    fill_holes_advanced, remove_outliers,
 };
 
 // Re-export multi-scan alignment and merging types
 pub use multiscan::{
-    align_multiple_scans, align_multiple_scans_with_params, merge_scans, MergeParams,
-    MergeResult, MultiAlignmentParams, MultiAlignmentResult, OverlapHandling, OverlapRegion,
+    MergeParams, MergeResult, MultiAlignmentParams, MultiAlignmentResult, OverlapHandling,
+    OverlapRegion, align_multiple_scans, align_multiple_scans_with_params, merge_scans,
 };
 
 // Re-export printability/manufacturing types
 pub use printability::{
-    auto_orient_for_printing, detect_support_regions, validate_for_printing,
-    IssueSeverity as PrintIssueSeverity,
-    OrientParams, OrientResult, OverhangRegion, PrintIssue, PrintIssueType, PrintTechnology,
-    PrintValidation, PrinterConfig, SupportAnalysis, SupportRegion, ThinWallRegion,
+    IssueSeverity as PrintIssueSeverity, OrientParams, OrientResult, OverhangRegion, PrintIssue,
+    PrintIssueType, PrintTechnology, PrintValidation, PrinterConfig, SupportAnalysis,
+    SupportRegion, ThinWallRegion, auto_orient_for_printing, detect_support_regions,
+    validate_for_printing,
 };
 
 // Re-export measurement types
 pub use measure::{
-    circumference_at_height, closest_point_on_mesh, cross_section, cross_sections, dimensions,
-    measure_distance, oriented_bounding_box, CrossSection, Dimensions,
-    DistanceMeasurement, OrientedBoundingBox,
+    CrossSection, Dimensions, DistanceMeasurement, OrientedBoundingBox, circumference_at_height,
+    closest_point_on_mesh, cross_section, cross_sections, dimensions, measure_distance,
+    oriented_bounding_box,
 };
 
 // Re-export slicing types for 3D print preview
 pub use slice::{
-    calculate_layer_stats, export_3mf_slices, export_layer_svg, export_slices_svg, slice_mesh,
-    slice_preview, validate_for_fdm, validate_for_sla, Contour, FdmParams, FdmValidationResult,
-    GapIssue, Layer, LayerBounds, LayerStats, SlaParams, SlaValidationResult, SliceParams,
-    SliceResult, SmallFeatureIssue, SvgExportParams, ThinWallIssue,
+    Contour, FdmParams, FdmValidationResult, GapIssue, Layer, LayerBounds, LayerStats, SlaParams,
+    SlaValidationResult, SliceParams, SliceResult, SmallFeatureIssue, SvgExportParams,
+    ThinWallIssue, calculate_layer_stats, export_3mf_slices, export_layer_svg, export_slices_svg,
+    slice_mesh, slice_preview, validate_for_fdm, validate_for_sla,
 };
 
 // Re-export point cloud types for scanner data processing
@@ -460,14 +471,14 @@ pub use pointcloud::{
 
 // Re-export progress tracking types for long-running operations
 pub use progress::{
-    estimate_operation_time, OperationEstimate, OperationType, Progress, ProgressCallback,
-    ProgressReporter, ProgressTracker, SharedProgressTracker,
+    OperationEstimate, OperationType, Progress, ProgressCallback, ProgressReporter,
+    ProgressTracker, SharedProgressTracker, estimate_operation_time,
 };
 
 // Re-export tracing extensions for structured logging and performance monitoring
 pub use tracing_ext::{
-    log_io_operation, log_mesh_stats, log_mesh_stats_detailed, log_perf_section, log_progress,
-    log_repair_result, log_validation_result, OperationTimer,
+    OperationTimer, log_io_operation, log_mesh_stats, log_mesh_stats_detailed, log_perf_section,
+    log_progress, log_repair_result, log_validation_result,
 };
 
 // Convenience methods on Mesh
@@ -584,7 +595,10 @@ impl Mesh {
     /// let result = mesh.decimate_with_params(&DecimateParams::with_target_ratio(0.25));
     /// println!("Reduced from {} to {} triangles", result.original_triangles, result.final_triangles);
     /// ```
-    pub fn decimate_with_params(&self, params: &decimate::DecimateParams) -> decimate::DecimateResult {
+    pub fn decimate_with_params(
+        &self,
+        params: &decimate::DecimateParams,
+    ) -> decimate::DecimateResult {
         decimate::decimate_mesh(self, params)
     }
 
@@ -607,7 +621,10 @@ impl Mesh {
     /// assert!(result.original_triangles == 1);
     /// ```
     pub fn decimate_to_count(&self, target: usize) -> decimate::DecimateResult {
-        decimate::decimate_mesh(self, &decimate::DecimateParams::with_target_triangles(target))
+        decimate::decimate_mesh(
+            self,
+            &decimate::DecimateParams::with_target_triangles(target),
+        )
     }
 
     /// Subdivide the mesh to increase triangle count and smooth the surface.
@@ -650,7 +667,10 @@ impl Mesh {
     /// let result = mesh.subdivide_with_params(&SubdivideParams::with_iterations(2));
     /// assert_eq!(result.final_triangles, 16);
     /// ```
-    pub fn subdivide_with_params(&self, params: &subdivide::SubdivideParams) -> subdivide::SubdivideResult {
+    pub fn subdivide_with_params(
+        &self,
+        params: &subdivide::SubdivideParams,
+    ) -> subdivide::SubdivideResult {
         subdivide::subdivide_mesh(self, params)
     }
 
@@ -674,7 +694,10 @@ impl Mesh {
     /// assert_eq!(result.final_triangles, 64);
     /// ```
     pub fn subdivide_n(&self, iterations: usize) -> subdivide::SubdivideResult {
-        subdivide::subdivide_mesh(self, &subdivide::SubdivideParams::with_iterations(iterations))
+        subdivide::subdivide_mesh(
+            self,
+            &subdivide::SubdivideParams::with_iterations(iterations),
+        )
     }
 
     /// Remesh the mesh to achieve uniform edge lengths and improve triangle quality.
@@ -737,7 +760,10 @@ impl Mesh {
     /// assert!(result.final_triangles > 1);
     /// ```
     pub fn remesh_with_edge_length(&self, target_edge_length: f64) -> remesh::RemeshResult {
-        remesh::remesh_isotropic(self, &remesh::RemeshParams::with_target_edge_length(target_edge_length))
+        remesh::remesh_isotropic(
+            self,
+            &remesh::RemeshParams::with_target_edge_length(target_edge_length),
+        )
     }
 
     /// Remesh with curvature-adaptive edge lengths.
@@ -786,8 +812,15 @@ impl Mesh {
     /// let result = mesh.remesh_anisotropic(2.0, 3.0);
     /// println!("Anisotropic remeshing: {} triangles", result.final_triangles);
     /// ```
-    pub fn remesh_anisotropic(&self, target_edge_length: f64, anisotropy_ratio: f64) -> remesh::RemeshResult {
-        remesh::remesh_anisotropic(self, &remesh::RemeshParams::anisotropic_with_ratio(target_edge_length, anisotropy_ratio))
+    pub fn remesh_anisotropic(
+        &self,
+        target_edge_length: f64,
+        anisotropy_ratio: f64,
+    ) -> remesh::RemeshResult {
+        remesh::remesh_anisotropic(
+            self,
+            &remesh::RemeshParams::anisotropic_with_ratio(target_edge_length, anisotropy_ratio),
+        )
     }
 
     /// Detect feature edges (sharp edges and boundaries) in the mesh.
@@ -976,7 +1009,11 @@ impl Mesh {
     ///     Point3::new(11.0, 5.0, 1.0),
     /// ));
     /// ```
-    pub fn define_region(&self, name: impl Into<String>, selector: region::RegionSelector) -> region::MeshRegion {
+    pub fn define_region(
+        &self,
+        name: impl Into<String>,
+        selector: region::RegionSelector,
+    ) -> region::MeshRegion {
         region::MeshRegion::from_selector(self, name, selector)
     }
 
@@ -1037,7 +1074,10 @@ impl Mesh {
     /// # fn main() {}
     /// ```
     #[cfg(feature = "step")]
-    pub fn save_step(&self, path: impl AsRef<std::path::Path>) -> MeshResult<step::StepExportResult> {
+    pub fn save_step(
+        &self,
+        path: impl AsRef<std::path::Path>,
+    ) -> MeshResult<step::StepExportResult> {
         step::export_step(self, path, &step::StepExportParams::default())
     }
 

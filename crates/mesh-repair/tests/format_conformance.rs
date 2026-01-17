@@ -3,7 +3,7 @@
 //! These tests verify that mesh file formats are read and written
 //! according to their specifications.
 
-use mesh_repair::{load_mesh, save_mesh, Mesh, Vertex};
+use mesh_repair::{Mesh, Vertex, load_mesh, save_mesh};
 use std::io::Write;
 use tempfile::NamedTempFile;
 
@@ -66,7 +66,8 @@ mod stl_conformance {
                 mesh.vertices.push(Vertex::from_coords(x, y, 0.0));
                 mesh.vertices.push(Vertex::from_coords(x + 1.0, y, 0.0));
                 mesh.vertices.push(Vertex::from_coords(x, y + 1.0, 0.0));
-                mesh.vertices.push(Vertex::from_coords(x + 1.0, y + 1.0, 0.0));
+                mesh.vertices
+                    .push(Vertex::from_coords(x + 1.0, y + 1.0, 0.0));
 
                 mesh.faces.push([base, base + 1, base + 2]);
                 mesh.faces.push([base + 1, base + 3, base + 2]);
@@ -117,8 +118,14 @@ mod stl_conformance {
         let (min, max) = reloaded.bounds().unwrap();
 
         // STL uses f32 internally, so precision is limited
-        assert!((max.x - 0.001).abs() < 1e-5, "X precision should be preserved");
-        assert!((max.y - 0.001).abs() < 1e-5, "Y precision should be preserved");
+        assert!(
+            (max.x - 0.001).abs() < 1e-5,
+            "X precision should be preserved"
+        );
+        assert!(
+            (max.y - 0.001).abs() < 1e-5,
+            "Y precision should be preserved"
+        );
     }
 }
 
@@ -134,7 +141,11 @@ mod obj_conformance {
     fn test_obj_vertex_order() {
         let mut mesh = Mesh::new();
         for i in 0..10 {
-            mesh.vertices.push(Vertex::from_coords(i as f64, i as f64 * 2.0, i as f64 * 3.0));
+            mesh.vertices.push(Vertex::from_coords(
+                i as f64,
+                i as f64 * 2.0,
+                i as f64 * 3.0,
+            ));
         }
         mesh.faces.push([0, 1, 2]);
         mesh.faces.push([3, 4, 5]);
@@ -144,9 +155,20 @@ mod obj_conformance {
 
         let reloaded = load_mesh(file.path()).expect("Should reload OBJ");
 
-        for (i, (orig, loaded)) in mesh.vertices.iter().zip(reloaded.vertices.iter()).enumerate() {
+        for (i, (orig, loaded)) in mesh
+            .vertices
+            .iter()
+            .zip(reloaded.vertices.iter())
+            .enumerate()
+        {
             let diff = (orig.position - loaded.position).norm();
-            assert!(diff < 1e-10, "Vertex {} should match: {:?} vs {:?}", i, orig.position, loaded.position);
+            assert!(
+                diff < 1e-10,
+                "Vertex {} should match: {:?} vs {:?}",
+                i,
+                orig.position,
+                loaded.position
+            );
         }
     }
 
@@ -168,9 +190,17 @@ mod obj_conformance {
         let reloaded = load_mesh(file.path()).expect("Should reload OBJ");
 
         // OBJ preserves face count
-        assert_eq!(mesh.face_count(), reloaded.face_count(), "Face count should match");
+        assert_eq!(
+            mesh.face_count(),
+            reloaded.face_count(),
+            "Face count should match"
+        );
         // OBJ preserves vertex count
-        assert_eq!(mesh.vertex_count(), reloaded.vertex_count(), "Vertex count should match");
+        assert_eq!(
+            mesh.vertex_count(),
+            reloaded.vertex_count(),
+            "Vertex count should match"
+        );
     }
 
     /// OBJ should handle reasonable precision coordinates.
@@ -189,7 +219,11 @@ mod obj_conformance {
 
         // OBJ should preserve reasonable precision (6 decimal places)
         let diff = (mesh.vertices[0].position.x - reloaded.vertices[0].position.x).abs();
-        assert!(diff < 1e-5, "OBJ should preserve reasonable precision, diff was {}", diff);
+        assert!(
+            diff < 1e-5,
+            "OBJ should preserve reasonable precision, diff was {}",
+            diff
+        );
     }
 
     /// OBJ should handle comments correctly.
@@ -306,10 +340,14 @@ mod threemf_conformance {
         let archive = zip::ZipArchive::new(zip_file).expect("Should be valid ZIP");
 
         // 3MF must contain specific files
-        assert!(archive.file_names().any(|n| n.contains("3D/3dmodel.model")),
-            "3MF must contain 3D/3dmodel.model");
-        assert!(archive.file_names().any(|n| n == "[Content_Types].xml"),
-            "3MF must contain [Content_Types].xml");
+        assert!(
+            archive.file_names().any(|n| n.contains("3D/3dmodel.model")),
+            "3MF must contain 3D/3dmodel.model"
+        );
+        assert!(
+            archive.file_names().any(|n| n == "[Content_Types].xml"),
+            "3MF must contain [Content_Types].xml"
+        );
     }
 
     /// 3MF round-trip should preserve geometry.
@@ -338,8 +376,14 @@ mod threemf_conformance {
         let (orig_min, orig_max) = mesh.bounds().unwrap();
         let (new_min, new_max) = reloaded.bounds().unwrap();
 
-        assert!((orig_min - new_min).norm() < 1e-6, "Min bounds should match");
-        assert!((orig_max - new_max).norm() < 1e-6, "Max bounds should match");
+        assert!(
+            (orig_min - new_min).norm() < 1e-6,
+            "Min bounds should match"
+        );
+        assert!(
+            (orig_max - new_max).norm() < 1e-6,
+            "Max bounds should match"
+        );
     }
 
     /// 3MF coordinates are in millimeters (spec requirement).
@@ -399,14 +443,24 @@ mod cross_format {
         let from_3mf = load_mesh(threemf_file.path()).expect("Load 3MF");
 
         // Verify geometry is preserved
-        assert_eq!(from_3mf.face_count(), 4, "Should have 4 faces after conversions");
+        assert_eq!(
+            from_3mf.face_count(),
+            4,
+            "Should have 4 faces after conversions"
+        );
 
         let (orig_min, orig_max) = mesh.bounds().unwrap();
         let (final_min, final_max) = from_3mf.bounds().unwrap();
 
         // Allow for floating-point conversion errors
-        assert!((orig_min - final_min).norm() < 1e-4, "Min bounds should be preserved");
-        assert!((orig_max - final_max).norm() < 1e-4, "Max bounds should be preserved");
+        assert!(
+            (orig_min - final_min).norm() < 1e-4,
+            "Min bounds should be preserved"
+        );
+        assert!(
+            (orig_max - final_max).norm() < 1e-4,
+            "Max bounds should be preserved"
+        );
     }
 
     /// Surface area should be preserved across format conversions.
@@ -439,11 +493,23 @@ mod cross_format {
         let threemf_area = from_3mf.surface_area();
 
         // All should be within floating-point tolerance
-        assert!((original_area - stl_area).abs() < 1e-4,
-            "STL area {} should match original {}", stl_area, original_area);
-        assert!((original_area - obj_area).abs() < 1e-10,
-            "OBJ area {} should match original {}", obj_area, original_area);
-        assert!((original_area - threemf_area).abs() < 1e-4,
-            "3MF area {} should match original {}", threemf_area, original_area);
+        assert!(
+            (original_area - stl_area).abs() < 1e-4,
+            "STL area {} should match original {}",
+            stl_area,
+            original_area
+        );
+        assert!(
+            (original_area - obj_area).abs() < 1e-10,
+            "OBJ area {} should match original {}",
+            obj_area,
+            original_area
+        );
+        assert!(
+            (original_area - threemf_area).abs() < 1e-4,
+            "3MF area {} should match original {}",
+            threemf_area,
+            original_area
+        );
     }
 }

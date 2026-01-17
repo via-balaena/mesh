@@ -115,9 +115,8 @@ impl Assembly {
         let part = self.parts.remove(part_id)?;
 
         // Remove connections involving this part
-        self.connections.retain(|conn| {
-            conn.from_part != part_id && conn.to_part != part_id
-        });
+        self.connections
+            .retain(|conn| conn.from_part != part_id && conn.to_part != part_id);
 
         // Clear parent references from children
         for other_part in self.parts.values_mut() {
@@ -277,9 +276,12 @@ impl Assembly {
         // Check for orphan parent references
         for part in self.parts.values() {
             if let Some(ref parent_id) = part.parent_id
-                && !self.parts.contains_key(parent_id) {
-                    result.orphan_references.push((part.id.clone(), parent_id.clone()));
-                }
+                && !self.parts.contains_key(parent_id)
+            {
+                result
+                    .orphan_references
+                    .push((part.id.clone(), parent_id.clone()));
+            }
         }
 
         // Check for circular parent references
@@ -292,10 +294,14 @@ impl Assembly {
         // Check connections
         for conn in &self.connections {
             if !self.parts.contains_key(&conn.from_part) {
-                result.invalid_connections.push((conn.clone(), format!("Missing part: {}", conn.from_part)));
+                result
+                    .invalid_connections
+                    .push((conn.clone(), format!("Missing part: {}", conn.from_part)));
             }
             if !self.parts.contains_key(&conn.to_part) {
-                result.invalid_connections.push((conn.clone(), format!("Missing part: {}", conn.to_part)));
+                result
+                    .invalid_connections
+                    .push((conn.clone(), format!("Missing part: {}", conn.to_part)));
             }
         }
 
@@ -350,7 +356,12 @@ impl Assembly {
     }
 
     /// Check clearance between two parts.
-    pub fn check_clearance(&self, part_a: &str, part_b: &str, min_required: f64) -> MeshResult<ClearanceResult> {
+    pub fn check_clearance(
+        &self,
+        part_a: &str,
+        part_b: &str,
+        min_required: f64,
+    ) -> MeshResult<ClearanceResult> {
         let mesh_a = self
             .get_transformed_mesh(part_a)
             .ok_or_else(|| MeshError::invalid_topology(format!("Part '{}' not found", part_a)))?;
@@ -423,8 +434,8 @@ impl Assembly {
     /// ```
     pub fn save_3mf(&self, path: &Path) -> MeshResult<()> {
         use std::fs::File;
-        use zip::write::SimpleFileOptions;
         use zip::ZipWriter;
+        use zip::write::SimpleFileOptions;
 
         if self.is_empty() {
             return Err(MeshError::EmptyMesh {
@@ -438,8 +449,8 @@ impl Assembly {
         })?;
 
         let mut zip = ZipWriter::new(file);
-        let options = SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Deflated);
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
         // Write content types file
         zip.start_file("[Content_Types].xml", options)
@@ -549,7 +560,9 @@ impl Assembly {
             let object_id = obj_id + 1;
 
             // Get world transform for this part
-            let world_transform = self.get_world_transform(part_id).unwrap_or_else(Isometry3::identity);
+            let world_transform = self
+                .get_world_transform(part_id)
+                .unwrap_or_else(Isometry3::identity);
 
             // Only include transform attribute if it's not identity
             if is_identity_transform(&world_transform) {
@@ -603,7 +616,9 @@ impl Assembly {
             }
 
             // Get transformed mesh
-            let mesh = self.get_transformed_mesh(part_id).unwrap_or_else(|| part.mesh.clone());
+            let mesh = self
+                .get_transformed_mesh(part_id)
+                .unwrap_or_else(|| part.mesh.clone());
 
             // Create filename
             let filename = format!("{}_{}.stl", stem, sanitize_filename(part_id));
@@ -641,7 +656,9 @@ impl Assembly {
         let mut items = Vec::with_capacity(self.parts.len());
 
         for (part_id, part) in &self.parts {
-            let mesh = self.get_transformed_mesh(part_id).unwrap_or_else(|| part.mesh.clone());
+            let mesh = self
+                .get_transformed_mesh(part_id)
+                .unwrap_or_else(|| part.mesh.clone());
             let (min, max) = compute_bbox(&mesh);
             let dimensions = max - min;
 
@@ -848,7 +865,8 @@ const ASSEMBLY_RELS_XML: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 fn is_identity_transform(t: &Isometry3<f64>) -> bool {
     let eps = 1e-10;
     let translation_zero = t.translation.vector.norm() < eps;
-    let rotation_identity = (t.rotation.angle() < eps) || (t.rotation.angle() - std::f64::consts::TAU).abs() < eps;
+    let rotation_identity =
+        (t.rotation.angle() < eps) || (t.rotation.angle() - std::f64::consts::TAU).abs() < eps;
     translation_zero && rotation_identity
 }
 
@@ -861,9 +879,18 @@ fn transform_to_3mf_matrix(t: &Isometry3<f64>) -> String {
 
     format!(
         "{:.6} {:.6} {:.6} {:.6} {:.6} {:.6} {:.6} {:.6} {:.6} {:.6} {:.6} {:.6}",
-        rot[(0, 0)], rot[(0, 1)], rot[(0, 2)], trans.x,
-        rot[(1, 0)], rot[(1, 1)], rot[(1, 2)], trans.y,
-        rot[(2, 0)], rot[(2, 1)], rot[(2, 2)], trans.z
+        rot[(0, 0)],
+        rot[(0, 1)],
+        rot[(0, 2)],
+        trans.x,
+        rot[(1, 0)],
+        rot[(1, 1)],
+        rot[(1, 2)],
+        trans.y,
+        rot[(2, 0)],
+        rot[(2, 1)],
+        rot[(2, 2)],
+        trans.z
     )
 }
 
@@ -1025,14 +1052,22 @@ impl Connection {
     }
 
     /// Create a press-fit connection.
-    pub fn press_fit(from_part: impl Into<String>, to_part: impl Into<String>, interference: f64) -> Self {
+    pub fn press_fit(
+        from_part: impl Into<String>,
+        to_part: impl Into<String>,
+        interference: f64,
+    ) -> Self {
         let mut conn = Self::new(from_part, to_part, ConnectionType::PressFit);
         conn.params.interference = Some(interference);
         conn
     }
 
     /// Create a clearance connection.
-    pub fn clearance(from_part: impl Into<String>, to_part: impl Into<String>, min_clearance: f64) -> Self {
+    pub fn clearance(
+        from_part: impl Into<String>,
+        to_part: impl Into<String>,
+        min_clearance: f64,
+    ) -> Self {
         let mut conn = Self::new(from_part, to_part, ConnectionType::Clearance);
         conn.params.clearance = Some(min_clearance);
         conn
@@ -1221,7 +1256,9 @@ mod tests {
     #[test]
     fn test_add_duplicate_part_fails() {
         let mut assembly = Assembly::new("test");
-        assembly.add_part(Part::new("part1", create_test_mesh())).unwrap();
+        assembly
+            .add_part(Part::new("part1", create_test_mesh()))
+            .unwrap();
 
         let result = assembly.add_part(Part::new("part1", create_test_mesh()));
         assert!(result.is_err());
@@ -1230,7 +1267,9 @@ mod tests {
     #[test]
     fn test_remove_part() {
         let mut assembly = Assembly::new("test");
-        assembly.add_part(Part::new("part1", create_test_mesh())).unwrap();
+        assembly
+            .add_part(Part::new("part1", create_test_mesh()))
+            .unwrap();
 
         let removed = assembly.remove_part("part1");
         assert!(removed.is_some());
@@ -1240,7 +1279,9 @@ mod tests {
     #[test]
     fn test_parent_child() {
         let mut assembly = Assembly::new("test");
-        assembly.add_part(Part::new("parent", create_test_mesh())).unwrap();
+        assembly
+            .add_part(Part::new("parent", create_test_mesh()))
+            .unwrap();
         assembly
             .add_part(Part::new("child", create_test_mesh()).with_parent("parent"))
             .unwrap();
@@ -1253,8 +1294,12 @@ mod tests {
     #[test]
     fn test_root_parts() {
         let mut assembly = Assembly::new("test");
-        assembly.add_part(Part::new("root1", create_test_mesh())).unwrap();
-        assembly.add_part(Part::new("root2", create_test_mesh())).unwrap();
+        assembly
+            .add_part(Part::new("root1", create_test_mesh()))
+            .unwrap();
+        assembly
+            .add_part(Part::new("root2", create_test_mesh()))
+            .unwrap();
         assembly
             .add_part(Part::new("child", create_test_mesh()).with_parent("root1"))
             .unwrap();
@@ -1282,8 +1327,12 @@ mod tests {
     #[test]
     fn test_define_connection() {
         let mut assembly = Assembly::new("test");
-        assembly.add_part(Part::new("part1", create_test_mesh())).unwrap();
-        assembly.add_part(Part::new("part2", create_test_mesh())).unwrap();
+        assembly
+            .add_part(Part::new("part1", create_test_mesh()))
+            .unwrap();
+        assembly
+            .add_part(Part::new("part2", create_test_mesh()))
+            .unwrap();
 
         let conn = Connection::snap_fit("part1", "part2");
         assembly.define_connection(conn).unwrap();
@@ -1294,7 +1343,9 @@ mod tests {
     #[test]
     fn test_connection_for_missing_part_fails() {
         let mut assembly = Assembly::new("test");
-        assembly.add_part(Part::new("part1", create_test_mesh())).unwrap();
+        assembly
+            .add_part(Part::new("part1", create_test_mesh()))
+            .unwrap();
 
         let conn = Connection::snap_fit("part1", "missing");
         let result = assembly.define_connection(conn);
@@ -1304,7 +1355,9 @@ mod tests {
     #[test]
     fn test_validate() {
         let mut assembly = Assembly::new("test");
-        assembly.add_part(Part::new("part1", create_test_mesh())).unwrap();
+        assembly
+            .add_part(Part::new("part1", create_test_mesh()))
+            .unwrap();
 
         let validation = assembly.validate();
         assert!(validation.is_valid());
@@ -1313,8 +1366,12 @@ mod tests {
     #[test]
     fn test_to_merged_mesh() {
         let mut assembly = Assembly::new("test");
-        assembly.add_part(Part::new("part1", create_test_mesh())).unwrap();
-        assembly.add_part(Part::new("part2", create_test_mesh())).unwrap();
+        assembly
+            .add_part(Part::new("part1", create_test_mesh()))
+            .unwrap();
+        assembly
+            .add_part(Part::new("part2", create_test_mesh()))
+            .unwrap();
 
         let merged = assembly.to_merged_mesh();
         assert_eq!(merged.vertices.len(), 6); // 3 + 3
@@ -1378,7 +1435,11 @@ mod tests {
             .add_part(Part::new("part2", create_test_mesh()).with_material("TPU"))
             .unwrap();
         assembly
-            .add_part(Part::new("part3", create_test_mesh()).with_material("PLA").with_parent("part1"))
+            .add_part(
+                Part::new("part3", create_test_mesh())
+                    .with_material("PLA")
+                    .with_parent("part1"),
+            )
             .unwrap();
 
         let bom = assembly.generate_bom();
@@ -1399,7 +1460,9 @@ mod tests {
     #[test]
     fn test_bom_item_dimensions() {
         let mut assembly = Assembly::new("test");
-        assembly.add_part(Part::new("part1", create_test_mesh())).unwrap();
+        assembly
+            .add_part(Part::new("part1", create_test_mesh()))
+            .unwrap();
 
         let bom = assembly.generate_bom();
         let item = &bom.items[0];
@@ -1414,7 +1477,9 @@ mod tests {
     #[test]
     fn test_save_3mf_roundtrip() {
         let mut assembly = Assembly::new("test_assembly");
-        assembly.metadata.insert("author".to_string(), "Test Author".to_string());
+        assembly
+            .metadata
+            .insert("author".to_string(), "Test Author".to_string());
 
         assembly
             .add_part(Part::new("part1", create_test_mesh()).with_translation(0.0, 0.0, 0.0))
@@ -1513,7 +1578,9 @@ mod tests {
     #[test]
     fn test_save_with_format_detection() {
         let mut assembly = Assembly::new("test");
-        assembly.add_part(Part::new("part1", create_test_mesh())).unwrap();
+        assembly
+            .add_part(Part::new("part1", create_test_mesh()))
+            .unwrap();
 
         let temp_dir = std::env::temp_dir();
 
@@ -1540,10 +1607,7 @@ mod tests {
             AssemblyExportFormat::from_path(Path::new("test.stl")),
             Some(AssemblyExportFormat::StlMerged)
         );
-        assert_eq!(
-            AssemblyExportFormat::from_path(Path::new("test.obj")),
-            None
-        );
+        assert_eq!(AssemblyExportFormat::from_path(Path::new("test.obj")), None);
     }
 
     #[test]
@@ -1581,6 +1645,9 @@ mod tests {
         assert_eq!(sanitize_filename("normal_name"), "normal_name");
         assert_eq!(sanitize_filename("with/slash"), "with_slash");
         assert_eq!(sanitize_filename("with:colon"), "with_colon");
-        assert_eq!(sanitize_filename("with*star?question"), "with_star_question");
+        assert_eq!(
+            sanitize_filename("with*star?question"),
+            "with_star_question"
+        );
     }
 }

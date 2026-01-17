@@ -30,7 +30,10 @@ use crate::{Mesh, Triangle};
 /// };
 /// ```
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "pipeline-config", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "pipeline-config",
+    derive(serde::Serialize, serde::Deserialize)
+)]
 pub struct RepairParams {
     /// Distance threshold for vertex welding.
     ///
@@ -141,12 +144,12 @@ impl RepairParams {
     /// for noisy scan data (e.g., from structured light or photogrammetry).
     pub fn for_scans() -> Self {
         Self {
-            weld_epsilon: 0.01, // 0.01mm - typical scan noise level
+            weld_epsilon: 0.01,                // 0.01mm - typical scan noise level
             degenerate_area_threshold: 0.0001, // 0.0001 mm²
-            degenerate_aspect_ratio: 100.0, // More aggressive sliver removal
+            degenerate_aspect_ratio: 100.0,    // More aggressive sliver removal
             degenerate_min_edge_length: 0.001, // 0.001mm minimum edge
-            max_hole_edges: 200, // Allow larger hole filling
-            fill_holes: true,    // Auto-fill small holes from scan gaps
+            max_hole_edges: 200,               // Allow larger hole filling
+            fill_holes: true,                  // Auto-fill small holes from scan gaps
             ..Default::default()
         }
     }
@@ -171,7 +174,7 @@ impl RepairParams {
     /// Ensures watertight, manifold output suitable for slicing.
     pub fn for_printing() -> Self {
         Self {
-            weld_epsilon: 0.001, // 0.001mm
+            weld_epsilon: 0.001,                // 0.001mm
             degenerate_area_threshold: 0.00001, // 0.00001 mm²
             degenerate_aspect_ratio: 500.0,
             degenerate_min_edge_length: 0.0001,
@@ -202,7 +205,10 @@ pub fn remove_degenerate_triangles(mesh: &mut Mesh, area_threshold: f64) -> usiz
 
     let removed = original_count - mesh.faces.len();
     if removed > 0 {
-        info!("Removed {} degenerate triangles (area < {:.6})", removed, area_threshold);
+        info!(
+            "Removed {} degenerate triangles (area < {:.6})",
+            removed, area_threshold
+        );
     }
     removed
 }
@@ -359,7 +365,8 @@ pub fn weld_vertices(mesh: &mut Mesh, epsilon: f64) -> usize {
     }
 
     // Remove faces that became degenerate after welding
-    mesh.faces.retain(|&[i0, i1, i2]| i0 != i1 && i1 != i2 && i0 != i2);
+    mesh.faces
+        .retain(|&[i0, i1, i2]| i0 != i1 && i1 != i2 && i0 != i2);
 
     info!(
         "Welded {} vertices (epsilon = {:.3}): {} → {}",
@@ -453,7 +460,10 @@ pub fn compute_vertex_normals(mesh: &mut Mesh) {
         }
     }
 
-    debug!("Computed vertex normals for {} vertices", mesh.vertices.len());
+    debug!(
+        "Computed vertex normals for {} vertices",
+        mesh.vertices.len()
+    );
 }
 
 /// Convert position to spatial hash cell.
@@ -654,7 +664,10 @@ pub fn fix_inverted_faces(mesh: &mut Mesh, original: &Mesh) -> usize {
     }
 
     if flipped_count > 0 {
-        info!("Fixed {} inverted faces by flipping winding order", flipped_count);
+        info!(
+            "Fixed {} inverted faces by flipping winding order",
+            flipped_count
+        );
     }
 
     flipped_count
@@ -698,7 +711,10 @@ pub fn repair_mesh(mesh: &mut Mesh) -> MeshResult<()> {
 /// * `mesh` - The mesh to repair
 /// * `weld_epsilon` - Distance threshold for welding vertices
 /// * `degenerate_threshold` - Area threshold for removing degenerate triangles
-#[deprecated(since = "0.2.0", note = "Use repair_mesh_with_config with RepairParams instead")]
+#[deprecated(
+    since = "0.2.0",
+    note = "Use repair_mesh_with_config with RepairParams instead"
+)]
 pub fn repair_mesh_with_params(
     mesh: &mut Mesh,
     weld_epsilon: f64,
@@ -736,9 +752,7 @@ pub fn repair_mesh_with_params(
 pub fn repair_mesh_with_config(mesh: &mut Mesh, params: &RepairParams) -> MeshResult<()> {
     info!(
         "Starting mesh repair pipeline (weld={:.2e}, area={:.2e}, aspect={:.0})",
-        params.weld_epsilon,
-        params.degenerate_area_threshold,
-        params.degenerate_aspect_ratio
+        params.weld_epsilon, params.degenerate_area_threshold, params.degenerate_aspect_ratio
     );
 
     let initial_verts = mesh.vertex_count();
@@ -770,9 +784,10 @@ pub fn repair_mesh_with_config(mesh: &mut Mesh, params: &RepairParams) -> MeshRe
 
     // 5. Fix winding order (optional)
     if params.fix_winding
-        && let Err(e) = fix_winding_order(mesh) {
-            warn!("Could not fix winding order: {:?}", e);
-        }
+        && let Err(e) = fix_winding_order(mesh)
+    {
+        warn!("Could not fix winding order: {:?}", e);
+    }
 
     // 6. Fill holes (optional)
     if params.fill_holes {
@@ -846,11 +861,11 @@ mod tests {
         let mut mesh = Mesh::new();
         // Two triangles with nearly-coincident vertices
         // 5 vertices total, vertex 3 is a near-duplicate of vertex 1
-        mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 0.0));     // 0
-        mesh.vertices.push(Vertex::from_coords(10.0, 0.0, 0.0));    // 1
-        mesh.vertices.push(Vertex::from_coords(0.0, 10.0, 0.0));    // 2
-        mesh.vertices.push(Vertex::from_coords(10.001, 0.0, 0.0));  // 3 (near-duplicate of 1)
-        mesh.vertices.push(Vertex::from_coords(10.0, 10.0, 0.0));   // 4
+        mesh.vertices.push(Vertex::from_coords(0.0, 0.0, 0.0)); // 0
+        mesh.vertices.push(Vertex::from_coords(10.0, 0.0, 0.0)); // 1
+        mesh.vertices.push(Vertex::from_coords(0.0, 10.0, 0.0)); // 2
+        mesh.vertices.push(Vertex::from_coords(10.001, 0.0, 0.0)); // 3 (near-duplicate of 1)
+        mesh.vertices.push(Vertex::from_coords(10.0, 10.0, 0.0)); // 4
 
         mesh.faces.push([0, 1, 2]);
         mesh.faces.push([3, 2, 4]); // Uses near-duplicate
@@ -861,7 +876,11 @@ mod tests {
         // After merging, vertex 3 should be remapped to vertex 1
         // So all face indices should be valid (< 5, the original vertex count)
         // and the second face should now reference vertex 1 instead of 3
-        assert!(mesh.faces.iter().all(|f| f[0] <= 4 && f[1] <= 4 && f[2] <= 4));
+        assert!(
+            mesh.faces
+                .iter()
+                .all(|f| f[0] <= 4 && f[1] <= 4 && f[2] <= 4)
+        );
 
         // Second face should have been remapped: [3, 2, 4] -> [1, 2, 4]
         assert_eq!(mesh.faces[1][0], 1); // Vertex 3 was merged into vertex 1
@@ -923,14 +942,21 @@ mod tests {
         let orig_normal = orig_e1.cross(&orig_e2);
 
         // Verify the face is inverted before fix
-        assert!(new_normal.dot(&orig_normal) < 0.0, "Face should be inverted before fix");
+        assert!(
+            new_normal.dot(&orig_normal) < 0.0,
+            "Face should be inverted before fix"
+        );
 
         // Fix the inverted face
         let fixed_count = fix_inverted_faces(&mut mesh, &original);
         assert_eq!(fixed_count, 1, "Should fix 1 face");
 
         // After fix, the face should have correct winding
-        assert_eq!(mesh.faces[0], [0, 1, 2], "Face should be restored to original winding");
+        assert_eq!(
+            mesh.faces[0],
+            [0, 1, 2],
+            "Face should be restored to original winding"
+        );
     }
 
     #[test]
@@ -1006,9 +1032,9 @@ mod tests {
 
         let removed = remove_degenerate_triangles_enhanced(
             &mut mesh,
-            0.001, // area threshold
+            0.001,         // area threshold
             f64::INFINITY, // no aspect ratio check
-            0.0, // no edge length check
+            0.0,           // no edge length check
         );
 
         assert_eq!(removed, 1);
@@ -1031,10 +1057,9 @@ mod tests {
         mesh.faces.push([3, 4, 5]);
 
         let removed = remove_degenerate_triangles_enhanced(
-            &mut mesh,
-            0.0, // no area check
+            &mut mesh, 0.0,   // no area check
             100.0, // aspect ratio threshold
-            0.0, // no edge length check
+            0.0,   // no edge length check
         );
 
         assert_eq!(removed, 1);
@@ -1058,9 +1083,9 @@ mod tests {
 
         let removed = remove_degenerate_triangles_enhanced(
             &mut mesh,
-            0.0, // no area check
+            0.0,           // no area check
             f64::INFINITY, // no aspect ratio check
-            0.001, // min edge length
+            0.001,         // min edge length
         );
 
         assert_eq!(removed, 1);
@@ -1080,7 +1105,7 @@ mod tests {
 
         let params = RepairParams {
             weld_epsilon: 0.001, // Will merge vertex 3 into vertex 1
-            fix_winding: false, // Keep it simple
+            fix_winding: false,  // Keep it simple
             fill_holes: false,
             ..Default::default()
         };

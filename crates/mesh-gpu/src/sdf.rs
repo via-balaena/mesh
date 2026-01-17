@@ -104,13 +104,13 @@ impl SdfPipeline {
                 });
 
         // Create pipeline layout
-        let pipeline_layout =
-            ctx.device
-                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("sdf_pipeline_layout"),
-                    bind_group_layouts: &[&bind_group_layout],
-                    push_constant_ranges: &[],
-                });
+        let pipeline_layout = ctx
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("sdf_pipeline_layout"),
+                bind_group_layouts: &[&bind_group_layout],
+                push_constant_ranges: &[],
+            });
 
         // Create compute pipeline
         let pipeline = ctx
@@ -274,7 +274,8 @@ fn compute_sdf_tiled(
     // Determine tile configuration based on available memory
     let available_memory = ctx.estimate_available_memory();
     // Reserve memory for mesh and overhead
-    let grid_memory = available_memory.saturating_sub(mesh_buffers.triangles_size() + 256 * 1024 * 1024);
+    let grid_memory =
+        available_memory.saturating_sub(mesh_buffers.triangles_size() + 256 * 1024 * 1024);
     let tile_config = TileConfig::for_memory_budget(grid_memory);
 
     let tile_counts = tile_config.tile_count(params.dims);
@@ -335,12 +336,7 @@ fn compute_sdf_tiled(
                     tile_dims,
                 );
 
-                debug!(
-                    tile_x = tx,
-                    tile_y = ty,
-                    tile_z = tz,
-                    "Tile processed"
-                );
+                debug!(tile_x = tx, tile_y = ty, tile_z = tz, "Tile processed");
             }
         }
     }
@@ -430,12 +426,18 @@ mod tests {
 
         // Cube faces (2 triangles per face)
         let faces = [
-            [0, 1, 2], [0, 2, 3], // Front
-            [4, 6, 5], [4, 7, 6], // Back
-            [0, 5, 1], [0, 4, 5], // Bottom
-            [2, 7, 3], [2, 6, 7], // Top
-            [0, 3, 7], [0, 7, 4], // Left
-            [1, 5, 6], [1, 6, 2], // Right
+            [0, 1, 2],
+            [0, 2, 3], // Front
+            [4, 6, 5],
+            [4, 7, 6], // Back
+            [0, 5, 1],
+            [0, 4, 5], // Bottom
+            [2, 7, 3],
+            [2, 6, 7], // Top
+            [0, 3, 7],
+            [0, 7, 4], // Left
+            [1, 5, 6],
+            [1, 6, 2], // Right
         ];
 
         for f in &faces {

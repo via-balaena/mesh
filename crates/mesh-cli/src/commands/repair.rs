@@ -7,7 +7,7 @@ use colored::Colorize;
 use mesh_repair::{Mesh, RepairParams};
 use serde::Serialize;
 
-use crate::{output, Cli, OutputFormat};
+use crate::{Cli, OutputFormat, output};
 
 #[derive(Serialize)]
 struct RepairResult {

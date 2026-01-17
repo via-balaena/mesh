@@ -122,7 +122,10 @@ pub struct AdaptiveGridResult {
 ///
 /// # Returns
 /// An `AdaptiveGridResult` containing the grid and statistics.
-pub fn create_adaptive_grid(mesh: &Mesh, params: &AdaptiveSdfParams) -> ShellResult<AdaptiveGridResult> {
+pub fn create_adaptive_grid(
+    mesh: &Mesh,
+    params: &AdaptiveSdfParams,
+) -> ShellResult<AdaptiveGridResult> {
     if mesh.vertices.is_empty() {
         return Err(ShellError::EmptyMesh);
     }
@@ -164,7 +167,8 @@ pub fn create_adaptive_grid(mesh: &Mesh, params: &AdaptiveSdfParams) -> ShellRes
     let estimated_fine_voxels = refined_coarse_voxels * fine_voxels_per_coarse;
 
     // Calculate what a full uniform fine grid would need
-    let full_fine_dims = compute_grid_dims(&min, &max, params.fine_voxel_size_mm, params.padding_mm);
+    let full_fine_dims =
+        compute_grid_dims(&min, &max, params.fine_voxel_size_mm, params.padding_mm);
     let full_fine_voxels = full_fine_dims[0] * full_fine_dims[1] * full_fine_dims[2];
 
     let effective_voxels = coarse_voxels + estimated_fine_voxels;
@@ -236,7 +240,12 @@ fn create_fine_grid(mesh: &Mesh, params: &AdaptiveSdfParams) -> ShellResult<SdfG
 }
 
 /// Compute grid dimensions without creating the grid.
-fn compute_grid_dims(min: &Point3<f64>, max: &Point3<f64>, voxel_size: f64, padding: f64) -> [usize; 3] {
+fn compute_grid_dims(
+    min: &Point3<f64>,
+    max: &Point3<f64>,
+    voxel_size: f64,
+    padding: f64,
+) -> [usize; 3] {
     let origin = Point3::new(min.x - padding, min.y - padding, min.z - padding);
     let max_padded = Point3::new(max.x + padding, max.y + padding, max.z + padding);
     let extent = max_padded - origin;
@@ -272,7 +281,7 @@ fn compute_adaptive_sdf(
     _refinement_mask: &[bool],
     params: &AdaptiveSdfParams,
 ) {
-    use mesh_to_sdf::{generate_grid_sdf, Grid, SignMethod, Topology};
+    use mesh_to_sdf::{Grid, SignMethod, Topology, generate_grid_sdf};
 
     info!(
         fine_voxels = fine_grid.total_voxels(),
@@ -291,7 +300,13 @@ fn compute_adaptive_sdf(
     let vertices: Vec<[f32; 3]> = mesh
         .vertices
         .iter()
-        .map(|v| [v.position.x as f32, v.position.y as f32, v.position.z as f32])
+        .map(|v| {
+            [
+                v.position.x as f32,
+                v.position.y as f32,
+                v.position.z as f32,
+            ]
+        })
         .collect();
 
     let indices: Vec<u32> = mesh.faces.iter().flat_map(|f| f.iter().copied()).collect();
@@ -332,8 +347,16 @@ fn compute_adaptive_sdf(
     });
 
     debug!(
-        min_sdf = fine_grid.values.iter().copied().fold(f32::INFINITY, f32::min),
-        max_sdf = fine_grid.values.iter().copied().fold(f32::NEG_INFINITY, f32::max),
+        min_sdf = fine_grid
+            .values
+            .iter()
+            .copied()
+            .fold(f32::INFINITY, f32::min),
+        max_sdf = fine_grid
+            .values
+            .iter()
+            .copied()
+            .fold(f32::NEG_INFINITY, f32::max),
         "Adaptive SDF computed"
     );
 }
@@ -420,8 +443,16 @@ pub fn interpolate_offsets_adaptive(
     fine_grid.offsets = offsets;
 
     debug!(
-        min_offset = fine_grid.offsets.iter().copied().fold(f32::INFINITY, f32::min),
-        max_offset = fine_grid.offsets.iter().copied().fold(f32::NEG_INFINITY, f32::max),
+        min_offset = fine_grid
+            .offsets
+            .iter()
+            .copied()
+            .fold(f32::INFINITY, f32::min),
+        max_offset = fine_grid
+            .offsets
+            .iter()
+            .copied()
+            .fold(f32::NEG_INFINITY, f32::max),
         "Adaptive offsets interpolated"
     );
 }
@@ -520,7 +551,10 @@ mod tests {
 
         // Effective voxels should be less than or equal to full fine grid
         // (or equal if everything needs refinement)
-        assert!(result.stats.effective_voxels <= result.stats.coarse_voxels * 64 + result.stats.coarse_voxels);
+        assert!(
+            result.stats.effective_voxels
+                <= result.stats.coarse_voxels * 64 + result.stats.coarse_voxels
+        );
     }
 
     #[test]
@@ -551,7 +585,9 @@ mod tests {
         assert!(!result.grid.offsets.is_empty());
 
         // Near the mesh surface, offsets should be close to 1.0 (vertex offset)
-        let near_surface_offsets: Vec<f32> = result.grid.offsets
+        let near_surface_offsets: Vec<f32> = result
+            .grid
+            .offsets
             .iter()
             .zip(result.grid.values.iter())
             .filter(|&(_, sdf)| sdf.abs() < 2.0)
@@ -559,7 +595,8 @@ mod tests {
             .collect();
 
         if !near_surface_offsets.is_empty() {
-            let avg_offset: f32 = near_surface_offsets.iter().sum::<f32>() / near_surface_offsets.len() as f32;
+            let avg_offset: f32 =
+                near_surface_offsets.iter().sum::<f32>() / near_surface_offsets.len() as f32;
             assert!(
                 (avg_offset - 1.0).abs() < 0.5,
                 "Near-surface offset should be close to 1.0, got {}",

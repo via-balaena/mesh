@@ -4,7 +4,7 @@
 //!
 //! Run with: cargo test -p mesh-repair -- proptest
 
-use mesh_repair::{decimate_mesh, DecimateParams, Mesh, Vertex};
+use mesh_repair::{DecimateParams, Mesh, Vertex, decimate_mesh};
 use proptest::prelude::*;
 
 // =============================================================================
@@ -39,18 +39,19 @@ fn arb_mesh(
                 return Just(Mesh {
                     vertices: verts,
                     faces: Vec::new(),
-                }).boxed();
+                })
+                .boxed();
             }
 
             let face = prop::array::uniform3(0..n);
             let faces = prop::collection::vec(face, min_faces..=max_faces);
 
-            faces.prop_map(move |f| {
-                Mesh {
+            faces
+                .prop_map(move |f| Mesh {
                     vertices: verts.clone(),
                     faces: f,
-                }
-            }).boxed()
+                })
+                .boxed()
         })
     })
 }
@@ -60,10 +61,14 @@ fn cube_mesh() -> Mesh {
     let mut mesh = Mesh::new();
 
     let verts = [
-        [-0.5, -0.5, -0.5], [0.5, -0.5, -0.5],
-        [0.5, 0.5, -0.5], [-0.5, 0.5, -0.5],
-        [-0.5, -0.5, 0.5], [0.5, -0.5, 0.5],
-        [0.5, 0.5, 0.5], [-0.5, 0.5, 0.5],
+        [-0.5, -0.5, -0.5],
+        [0.5, -0.5, -0.5],
+        [0.5, 0.5, -0.5],
+        [-0.5, 0.5, -0.5],
+        [-0.5, -0.5, 0.5],
+        [0.5, -0.5, 0.5],
+        [0.5, 0.5, 0.5],
+        [-0.5, 0.5, 0.5],
     ];
 
     for v in &verts {
@@ -71,12 +76,18 @@ fn cube_mesh() -> Mesh {
     }
 
     let faces = [
-        [0, 1, 2], [0, 2, 3],
-        [4, 6, 5], [4, 7, 6],
-        [0, 4, 5], [0, 5, 1],
-        [2, 6, 7], [2, 7, 3],
-        [0, 3, 7], [0, 7, 4],
-        [1, 5, 6], [1, 6, 2],
+        [0, 1, 2],
+        [0, 2, 3],
+        [4, 6, 5],
+        [4, 7, 6],
+        [0, 4, 5],
+        [0, 5, 1],
+        [2, 6, 7],
+        [2, 7, 3],
+        [0, 3, 7],
+        [0, 7, 4],
+        [1, 5, 6],
+        [1, 6, 2],
     ];
 
     for f in &faces {
@@ -289,7 +300,11 @@ fn proptest_cube_is_watertight() {
 fn proptest_cube_has_positive_volume() {
     let cube = cube_mesh();
     let volume = cube.volume();
-    assert!(volume > 0.0, "Cube should have positive volume, got {}", volume);
+    assert!(
+        volume > 0.0,
+        "Cube should have positive volume, got {}",
+        volume
+    );
 }
 
 #[test]
@@ -298,8 +313,12 @@ fn proptest_cube_surface_area() {
     let area = cube.surface_area();
     // Unit cube has surface area of 6.0 (6 faces * 1.0 each)
     let expected = 6.0;
-    assert!((area - expected).abs() < 1e-10,
-        "Cube surface area should be {}, got {}", expected, area);
+    assert!(
+        (area - expected).abs() < 1e-10,
+        "Cube surface area should be {}, got {}",
+        expected,
+        area
+    );
 }
 
 // =============================================================================

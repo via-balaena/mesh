@@ -169,37 +169,37 @@ impl CollisionPipeline {
                 });
 
         // Create pipeline layout
-        let pipeline_layout =
-            ctx.device
-                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("collision_pipeline_layout"),
-                    bind_group_layouts: &[&bind_group_layout],
-                    push_constant_ranges: &[],
-                });
+        let pipeline_layout = ctx
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("collision_pipeline_layout"),
+                bind_group_layouts: &[&bind_group_layout],
+                push_constant_ranges: &[],
+            });
 
         // Create AABB computation pipeline
-        let aabb_pipeline =
-            ctx.device
-                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                    label: Some("collision_aabb_pipeline"),
-                    layout: Some(&pipeline_layout),
-                    module: &shader,
-                    entry_point: Some("compute_aabbs"),
-                    compilation_options: Default::default(),
-                    cache: None,
-                });
+        let aabb_pipeline = ctx
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("collision_aabb_pipeline"),
+                layout: Some(&pipeline_layout),
+                module: &shader,
+                entry_point: Some("compute_aabbs"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
 
         // Create intersection test pipeline
-        let test_pipeline =
-            ctx.device
-                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                    label: Some("collision_test_pipeline"),
-                    layout: Some(&pipeline_layout),
-                    module: &shader,
-                    entry_point: Some("test_intersections"),
-                    compilation_options: Default::default(),
-                    cache: None,
-                });
+        let test_pipeline = ctx
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("collision_test_pipeline"),
+                layout: Some(&pipeline_layout),
+                module: &shader,
+                entry_point: Some("test_intersections"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
 
         Ok(Self {
             aabb_pipeline,

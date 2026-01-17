@@ -238,7 +238,7 @@ impl SdfGrid {
 
     /// Compute SDF values using mesh_to_sdf crate (CPU implementation).
     fn compute_sdf_cpu(&mut self, mesh: &Mesh) {
-        use mesh_to_sdf::{generate_grid_sdf, Grid, SignMethod, Topology};
+        use mesh_to_sdf::{Grid, SignMethod, Topology, generate_grid_sdf};
 
         info!(vertices = mesh.vertices.len(), "Computing SDF (CPU)");
 
@@ -246,7 +246,13 @@ impl SdfGrid {
         let vertices: Vec<[f32; 3]> = mesh
             .vertices
             .iter()
-            .map(|v| [v.position.x as f32, v.position.y as f32, v.position.z as f32])
+            .map(|v| {
+                [
+                    v.position.x as f32,
+                    v.position.y as f32,
+                    v.position.z as f32,
+                ]
+            })
             .collect();
 
         let indices: Vec<u32> = mesh.faces.iter().flat_map(|f| f.iter().copied()).collect();
@@ -278,7 +284,11 @@ impl SdfGrid {
 
         debug!(
             min_sdf = self.values.iter().copied().fold(f32::INFINITY, f32::min),
-            max_sdf = self.values.iter().copied().fold(f32::NEG_INFINITY, f32::max),
+            max_sdf = self
+                .values
+                .iter()
+                .copied()
+                .fold(f32::NEG_INFINITY, f32::max),
             "SDF computed (CPU)"
         );
     }
@@ -288,7 +298,7 @@ impl SdfGrid {
     /// Returns true if GPU computation succeeded, false otherwise.
     #[cfg(feature = "gpu")]
     fn try_compute_sdf_gpu(&mut self, mesh: &Mesh) -> bool {
-        use mesh_gpu::{try_compute_sdf_gpu, GpuSdfParams};
+        use mesh_gpu::{GpuSdfParams, try_compute_sdf_gpu};
 
         let params = GpuSdfParams {
             dims: self.dims,
@@ -302,10 +312,7 @@ impl SdfGrid {
 
         match try_compute_sdf_gpu(mesh, &params) {
             Some(result) => {
-                info!(
-                    time_ms = result.compute_time_ms,
-                    "SDF computed (GPU)"
-                );
+                info!(time_ms = result.compute_time_ms, "SDF computed (GPU)");
                 self.values = result.values;
                 true
             }
@@ -339,7 +346,10 @@ impl SdfGrid {
             .map(|v| v.offset.unwrap_or(0.0))
             .collect();
 
-        info!("KD-tree built, interpolating {} voxels", self.total_voxels());
+        info!(
+            "KD-tree built, interpolating {} voxels",
+            self.total_voxels()
+        );
 
         let [_dim_x, dim_y, dim_z] = self.dims;
         let voxel_size = self.voxel_size;
@@ -388,7 +398,11 @@ impl SdfGrid {
 
         debug!(
             min_offset = self.offsets.iter().copied().fold(f32::INFINITY, f32::min),
-            max_offset = self.offsets.iter().copied().fold(f32::NEG_INFINITY, f32::max),
+            max_offset = self
+                .offsets
+                .iter()
+                .copied()
+                .fold(f32::NEG_INFINITY, f32::max),
             "Offsets interpolated"
         );
     }
@@ -409,7 +423,11 @@ impl SdfGrid {
 
         debug!(
             min_adjusted = self.values.iter().copied().fold(f32::INFINITY, f32::min),
-            max_adjusted = self.values.iter().copied().fold(f32::NEG_INFINITY, f32::max),
+            max_adjusted = self
+                .values
+                .iter()
+                .copied()
+                .fold(f32::NEG_INFINITY, f32::max),
             "Variable offset applied"
         );
     }

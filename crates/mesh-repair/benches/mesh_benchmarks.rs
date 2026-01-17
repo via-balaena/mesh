@@ -6,7 +6,7 @@
 //! 1. First run: cargo bench -p mesh-repair -- --save-baseline main
 //! 2. After changes: cargo bench -p mesh-repair -- --baseline main
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use mesh_repair::{DecimateParams, Mesh, RemeshParams, Vertex};
 
 // =============================================================================
@@ -33,12 +33,18 @@ fn create_cube() -> Mesh {
     }
 
     let faces = [
-        [0, 1, 2], [0, 2, 3], // front
-        [4, 6, 5], [4, 7, 6], // back
-        [0, 4, 5], [0, 5, 1], // bottom
-        [2, 6, 7], [2, 7, 3], // top
-        [0, 3, 7], [0, 7, 4], // left
-        [1, 5, 6], [1, 6, 2], // right
+        [0, 1, 2],
+        [0, 2, 3], // front
+        [4, 6, 5],
+        [4, 7, 6], // back
+        [0, 4, 5],
+        [0, 5, 1], // bottom
+        [2, 6, 7],
+        [2, 7, 3], // top
+        [0, 3, 7],
+        [0, 7, 4], // left
+        [1, 5, 6],
+        [1, 6, 2], // right
     ];
 
     for f in &faces {
@@ -57,22 +63,47 @@ fn create_sphere(subdivisions: u32) -> Mesh {
     let b = 1.0 / phi;
 
     let ico_verts = [
-        [0.0, b, -a], [b, a, 0.0], [-b, a, 0.0], [0.0, b, a],
-        [0.0, -b, a], [-a, 0.0, b], [0.0, -b, -a], [a, 0.0, -b],
-        [a, 0.0, b], [-a, 0.0, -b], [b, -a, 0.0], [-b, -a, 0.0],
+        [0.0, b, -a],
+        [b, a, 0.0],
+        [-b, a, 0.0],
+        [0.0, b, a],
+        [0.0, -b, a],
+        [-a, 0.0, b],
+        [0.0, -b, -a],
+        [a, 0.0, -b],
+        [a, 0.0, b],
+        [-a, 0.0, -b],
+        [b, -a, 0.0],
+        [-b, -a, 0.0],
     ];
 
     for v in &ico_verts {
         let len = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
-        mesh.vertices.push(Vertex::from_coords(v[0] / len, v[1] / len, v[2] / len));
+        mesh.vertices
+            .push(Vertex::from_coords(v[0] / len, v[1] / len, v[2] / len));
     }
 
     let ico_faces: [[u32; 3]; 20] = [
-        [0, 1, 2], [3, 2, 1], [3, 4, 5], [3, 8, 4],
-        [0, 6, 7], [0, 9, 6], [4, 10, 11], [6, 11, 10],
-        [2, 5, 9], [11, 9, 5], [1, 7, 8], [10, 8, 7],
-        [3, 5, 2], [3, 1, 8], [0, 2, 9], [0, 7, 1],
-        [6, 9, 11], [6, 10, 7], [4, 11, 5], [4, 8, 10],
+        [0, 1, 2],
+        [3, 2, 1],
+        [3, 4, 5],
+        [3, 8, 4],
+        [0, 6, 7],
+        [0, 9, 6],
+        [4, 10, 11],
+        [6, 11, 10],
+        [2, 5, 9],
+        [11, 9, 5],
+        [1, 7, 8],
+        [10, 8, 7],
+        [3, 5, 2],
+        [3, 1, 8],
+        [0, 2, 9],
+        [0, 7, 1],
+        [6, 9, 11],
+        [6, 10, 7],
+        [4, 11, 5],
+        [4, 8, 10],
     ];
 
     for f in &ico_faces {
@@ -159,13 +190,9 @@ fn bench_validation(c: &mut Criterion) {
     for (name, mesh) in &test_cases {
         group.throughput(Throughput::Elements(mesh.faces.len() as u64));
 
-        group.bench_with_input(
-            BenchmarkId::new("validate", name),
-            mesh,
-            |b, mesh| {
-                b.iter(|| mesh_repair::validate_mesh(black_box(mesh)))
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("validate", name), mesh, |b, mesh| {
+            b.iter(|| mesh_repair::validate_mesh(black_box(mesh)))
+        });
     }
 
     group.finish();
@@ -187,16 +214,12 @@ fn bench_repair(c: &mut Criterion) {
     for (name, mesh) in &test_cases {
         group.throughput(Throughput::Elements(mesh.faces.len() as u64));
 
-        group.bench_with_input(
-            BenchmarkId::new("fix_winding", name),
-            mesh,
-            |b, mesh| {
-                let mut m = mesh.clone();
-                b.iter(|| {
-                    let _ = mesh_repair::fix_winding_order(&mut m);
-                })
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("fix_winding", name), mesh, |b, mesh| {
+            let mut m = mesh.clone();
+            b.iter(|| {
+                let _ = mesh_repair::fix_winding_order(&mut m);
+            })
+        });
 
         group.bench_with_input(
             BenchmarkId::new("remove_degenerate", name),
@@ -209,16 +232,12 @@ fn bench_repair(c: &mut Criterion) {
             },
         );
 
-        group.bench_with_input(
-            BenchmarkId::new("weld_vertices", name),
-            mesh,
-            |b, mesh| {
-                let mut m = mesh.clone();
-                b.iter(|| {
-                    mesh_repair::weld_vertices(&mut m, 1e-6);
-                })
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("weld_vertices", name), mesh, |b, mesh| {
+            let mut m = mesh.clone();
+            b.iter(|| {
+                mesh_repair::weld_vertices(&mut m, 1e-6);
+            })
+        });
     }
 
     group.finish();
@@ -268,9 +287,7 @@ fn bench_decimation(c: &mut Criterion) {
             &(mesh, target),
             |b, (mesh, target)| {
                 let params = DecimateParams::with_target_triangles(*target);
-                b.iter(|| {
-                    mesh_repair::decimate_mesh(black_box(mesh), black_box(&params))
-                })
+                b.iter(|| mesh_repair::decimate_mesh(black_box(mesh), black_box(&params)))
             },
         );
     }
@@ -296,20 +313,14 @@ fn bench_remeshing(c: &mut Criterion) {
 
         group.throughput(Throughput::Elements(mesh.faces.len() as u64));
 
-        group.bench_with_input(
-            BenchmarkId::new("isotropic", name),
-            mesh,
-            |b, mesh| {
-                let params = RemeshParams {
-                    target_edge_length: Some(target_edge_length),
-                    iterations: 3,
-                    ..Default::default()
-                };
-                b.iter(|| {
-                    mesh_repair::remesh_isotropic(black_box(mesh), black_box(&params))
-                })
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("isotropic", name), mesh, |b, mesh| {
+            let params = RemeshParams {
+                target_edge_length: Some(target_edge_length),
+                iterations: 3,
+                ..Default::default()
+            };
+            b.iter(|| mesh_repair::remesh_isotropic(black_box(mesh), black_box(&params)))
+        });
     }
 
     group.finish();
@@ -375,7 +386,10 @@ fn bench_intersection(c: &mut Criterion) {
             |b, mesh| {
                 let params = mesh_repair::intersect::IntersectionParams::default();
                 b.iter(|| {
-                    mesh_repair::intersect::detect_self_intersections(black_box(mesh), black_box(&params))
+                    mesh_repair::intersect::detect_self_intersections(
+                        black_box(mesh),
+                        black_box(&params),
+                    )
                 })
             },
         );

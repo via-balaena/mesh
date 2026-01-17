@@ -4,12 +4,12 @@
 
 use tracing::{debug, info, warn};
 
-use mesh_repair::{compute_vertex_normals, Mesh, ThicknessMap};
+use mesh_repair::{Mesh, ThicknessMap, compute_vertex_normals};
 
 use super::rim::{generate_rim, generate_rim_for_sdf_shell};
-use super::validation::{validate_shell, ShellValidationResult};
-use crate::offset::grid::SdfGrid;
+use super::validation::{ShellValidationResult, validate_shell};
 use crate::offset::extract::extract_isosurface;
+use crate::offset::grid::SdfGrid;
 
 /// Method for generating the outer surface of the shell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -106,7 +106,6 @@ impl ShellParams {
         self.wall_thickness_mm = thickness;
         self
     }
-
 
     /// Create params optimized for high-quality output with consistent wall thickness.
     ///
@@ -217,7 +216,9 @@ fn generate_shell_normal(inner_shell: &Mesh, params: &ShellParams) -> (Mesh, She
         let thickness = params.get_vertex_thickness(i as u32);
 
         // Outer vertex (offset by wall thickness)
-        let normal = vertex.normal.unwrap_or_else(|| nalgebra::Vector3::new(0.0, 0.0, 1.0));
+        let normal = vertex
+            .normal
+            .unwrap_or_else(|| nalgebra::Vector3::new(0.0, 0.0, 1.0));
         let outer_pos = vertex.position + normal * thickness;
 
         let mut outer_vertex = vertex.clone();
@@ -239,11 +240,16 @@ fn generate_shell_normal(inner_shell: &Mesh, params: &ShellParams) -> (Mesh, She
     // Step 4: Generate outer faces with offset indices (original winding for outward normals)
     for face in &inner_shell.faces {
         let n32 = n as u32;
-        shell.faces.push([face[0] + n32, face[1] + n32, face[2] + n32]);
+        shell
+            .faces
+            .push([face[0] + n32, face[1] + n32, face[2] + n32]);
     }
 
     let inner_face_count = inner_shell.faces.len();
-    debug!("Added {} inner + {} outer faces", inner_face_count, inner_face_count);
+    debug!(
+        "Added {} inner + {} outer faces",
+        inner_face_count, inner_face_count
+    );
 
     // Step 5: Find boundary edges and generate rim
     let (rim_faces, boundary_size) = generate_rim(&inner_with_normals, n);
@@ -320,7 +326,10 @@ fn generate_shell_sdf(inner_shell: &Mesh, params: &ShellParams) -> (Mesh, ShellR
     let mut grid = match grid_result {
         Ok(g) => g,
         Err(e) => {
-            warn!("SDF grid creation failed: {:?}, falling back to normal method", e);
+            warn!(
+                "SDF grid creation failed: {:?}, falling back to normal method",
+                e
+            );
             return generate_shell_normal(inner_shell, params);
         }
     };
@@ -346,7 +355,10 @@ fn generate_shell_sdf(inner_shell: &Mesh, params: &ShellParams) -> (Mesh, ShellR
     let outer_mesh = match extract_isosurface(&grid) {
         Ok(m) => m,
         Err(e) => {
-            warn!("Isosurface extraction failed: {:?}, falling back to normal method", e);
+            warn!(
+                "Isosurface extraction failed: {:?}, falling back to normal method",
+                e
+            );
             return generate_shell_normal(inner_shell, params);
         }
     };
@@ -387,11 +399,8 @@ fn generate_shell_sdf(inner_shell: &Mesh, params: &ShellParams) -> (Mesh, ShellR
     }
 
     // Step 7: Generate rim connecting inner and outer boundaries
-    let (rim_faces, boundary_size) = generate_rim_for_sdf_shell(
-        &inner_with_normals,
-        &outer_mesh,
-        inner_count as usize,
-    );
+    let (rim_faces, boundary_size) =
+        generate_rim_for_sdf_shell(&inner_with_normals, &outer_mesh, inner_count as usize);
 
     let rim_face_count = rim_faces.len();
     for face in rim_faces {
@@ -436,7 +445,10 @@ fn generate_shell_sdf(inner_shell: &Mesh, params: &ShellParams) -> (Mesh, ShellR
 /// Generate a shell without automatic validation.
 ///
 /// This is equivalent to calling `generate_shell` with `validate_after_generation = false`.
-pub fn generate_shell_no_validation(inner_shell: &Mesh, params: &ShellParams) -> (Mesh, ShellResult) {
+pub fn generate_shell_no_validation(
+    inner_shell: &Mesh,
+    params: &ShellParams,
+) -> (Mesh, ShellResult) {
     let mut params = params.clone();
     params.validate_after_generation = false;
     generate_shell(inner_shell, &params)
@@ -511,12 +523,21 @@ pub fn generate_shell_with_progress(
 
     // Dispatch based on wall generation method
     match params.wall_generation_method {
-        WallGenerationMethod::Normal => {
-            generate_shell_normal_with_progress(inner_shell, params, &inner_with_normals, n, &tracker, callback)
-        }
-        WallGenerationMethod::Sdf => {
-            generate_shell_sdf_with_progress(inner_shell, params, &inner_with_normals, &tracker, callback)
-        }
+        WallGenerationMethod::Normal => generate_shell_normal_with_progress(
+            inner_shell,
+            params,
+            &inner_with_normals,
+            n,
+            &tracker,
+            callback,
+        ),
+        WallGenerationMethod::Sdf => generate_shell_sdf_with_progress(
+            inner_shell,
+            params,
+            &inner_with_normals,
+            &tracker,
+            callback,
+        ),
     }
 }
 
@@ -566,7 +587,9 @@ fn generate_shell_normal_with_progress(
 
     for (i, vertex) in inner_with_normals.vertices.iter().enumerate() {
         let thickness = params.get_vertex_thickness(i as u32);
-        let normal = vertex.normal.unwrap_or_else(|| nalgebra::Vector3::new(0.0, 0.0, 1.0));
+        let normal = vertex
+            .normal
+            .unwrap_or_else(|| nalgebra::Vector3::new(0.0, 0.0, 1.0));
         let outer_pos = vertex.position + normal * thickness;
 
         let mut outer_vertex = vertex.clone();
@@ -592,11 +615,16 @@ fn generate_shell_normal_with_progress(
     // Outer faces with offset indices (original winding for outward normals)
     for face in &inner_shell.faces {
         let n32 = n as u32;
-        shell.faces.push([face[0] + n32, face[1] + n32, face[2] + n32]);
+        shell
+            .faces
+            .push([face[0] + n32, face[1] + n32, face[2] + n32]);
     }
 
     let inner_face_count = inner_shell.faces.len();
-    debug!("Added {} inner + {} outer faces", inner_face_count, inner_face_count);
+    debug!(
+        "Added {} inner + {} outer faces",
+        inner_face_count, inner_face_count
+    );
 
     // Phase 5: Generate rim
     tracker.set(70);
@@ -701,7 +729,10 @@ fn generate_shell_sdf_with_progress(
     let mut grid = match grid_result {
         Ok(g) => g,
         Err(e) => {
-            warn!("SDF grid creation failed: {:?}, falling back to normal method", e);
+            warn!(
+                "SDF grid creation failed: {:?}, falling back to normal method",
+                e
+            );
             return generate_shell_normal(inner_shell, params);
         }
     };
@@ -741,7 +772,10 @@ fn generate_shell_sdf_with_progress(
     let outer_mesh = match extract_isosurface(&grid) {
         Ok(m) => m,
         Err(e) => {
-            warn!("Isosurface extraction failed: {:?}, falling back to normal method", e);
+            warn!(
+                "Isosurface extraction failed: {:?}, falling back to normal method",
+                e
+            );
             return generate_shell_normal(inner_shell, params);
         }
     };
@@ -792,11 +826,8 @@ fn generate_shell_sdf_with_progress(
         return empty_shell_result(params);
     }
 
-    let (rim_faces, boundary_size) = generate_rim_for_sdf_shell(
-        inner_with_normals,
-        &outer_mesh,
-        inner_count as usize,
-    );
+    let (rim_faces, boundary_size) =
+        generate_rim_for_sdf_shell(inner_with_normals, &outer_mesh, inner_count as usize);
 
     let rim_face_count = rim_faces.len();
     for face in rim_faces {
@@ -1080,8 +1111,16 @@ mod tests {
         );
 
         // The offsets should be close to their target values (within tolerance due to normal direction)
-        assert!(offset_0 < 2.0, "Bottom offset should be around 1mm: {}", offset_0);
-        assert!(offset_4 > 2.0, "Top offset should be around 3mm: {}", offset_4);
+        assert!(
+            offset_0 < 2.0,
+            "Bottom offset should be around 1mm: {}",
+            offset_0
+        );
+        assert!(
+            offset_4 > 2.0,
+            "Top offset should be around 3mm: {}",
+            offset_4
+        );
     }
 
     #[test]

@@ -42,8 +42,16 @@ impl std::fmt::Display for ComponentAnalysis {
         writeln!(f, "Component Analysis:")?;
         writeln!(f, "  Connected components: {}", self.component_count)?;
         if self.component_count > 0 {
-            writeln!(f, "  Largest component: {} faces", self.largest_component_size)?;
-            writeln!(f, "  Smallest component: {} faces", self.smallest_component_size)?;
+            writeln!(
+                f,
+                "  Largest component: {} faces",
+                self.largest_component_size
+            )?;
+            writeln!(
+                f,
+                "  Smallest component: {} faces",
+                self.smallest_component_size
+            )?;
             if self.component_count > 1 {
                 writeln!(f, "  Component sizes:")?;
                 for (i, comp) in self.components.iter().enumerate() {

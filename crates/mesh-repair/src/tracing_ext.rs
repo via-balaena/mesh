@@ -34,7 +34,7 @@
 //! - **TRACE**: Very detailed state dumps, per-vertex/face logging
 
 use std::time::Instant;
-use tracing::{debug, info, trace, warn, Span};
+use tracing::{Span, debug, info, trace, warn};
 
 /// A performance timer that logs duration on drop.
 ///
@@ -184,11 +184,7 @@ pub fn log_validation_result(report: &crate::MeshReport) {
 }
 
 /// Log a repair operation result.
-pub fn log_repair_result(
-    operation: &str,
-    items_fixed: usize,
-    elapsed_ms: f64,
-) {
+pub fn log_repair_result(operation: &str, items_fixed: usize, elapsed_ms: f64) {
     info!(
         target: "mesh_repair::repair",
         operation = operation,
@@ -199,12 +195,7 @@ pub fn log_repair_result(
 }
 
 /// Log progress for a long-running operation.
-pub fn log_progress(
-    operation: &str,
-    current: usize,
-    total: usize,
-    stage: Option<&str>,
-) {
+pub fn log_progress(operation: &str, current: usize, total: usize, stage: Option<&str>) {
     let percent = if total > 0 {
         (current as f64 / total as f64 * 100.0) as u32
     } else {
