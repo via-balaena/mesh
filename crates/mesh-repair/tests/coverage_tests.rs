@@ -797,7 +797,7 @@ fn test_weld_vertices_with_duplicates() {
     let mut mesh = create_unit_cube();
     // Add duplicate vertex at same position as vertex 0
     let dup_vertex = mesh.vertices[0].clone();
-    let original_vertices = mesh.vertex_count();
+    let _original_vertices = mesh.vertex_count();
     mesh.vertices.push(dup_vertex);
 
     // Add a face that uses the duplicate
